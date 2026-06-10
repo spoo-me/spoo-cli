@@ -9,6 +9,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
+	tslc "github.com/NimbleMarkets/ntcharts/v2/linechart/timeserieslinechart"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/ui"
@@ -286,56 +287,58 @@ func (m StatsModel) summaryLine() string {
 	return strings.Join(parts, ui.Dim.Render("  ·  "))
 }
 
-// timeChart renders the time series as a multi-row block chart spanning
-// the full width, downsampled so the whole window is always visible.
+// bucketTimeLayouts are the formats the backend uses for time-bucket
+// labels across its hourly/daily/weekly/monthly strategies.
+var bucketTimeLayouts = []string{
+	"2006-01-02T15:04:05Z07:00",
+	"2006-01-02 15:04",
+	"2006-01-02T15:04",
+	"2006-01-02 15",
+	"2006-01-02",
+	"2006-01",
+}
+
+func parseBucketTime(label string) (time.Time, bool) {
+	for _, layout := range bucketTimeLayouts {
+		if ts, err := time.Parse(layout, label); err == nil {
+			return ts, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// timeChart renders the time series as a braille line chart with real
+// axes (ntcharts), sized to the full dashboard width.
 func (m StatsModel) timeChart() string {
 	pts := m.res.Points("time", m.metric)
-	chartW := max(20, m.width-10)
 	if len(pts) == 0 {
 		return ui.Dim.Render("no time series data") + "\n"
 	}
-	buckets := make([]float64, min(chartW, len(pts)))
-	for i, p := range pts {
-		buckets[i*len(buckets)/len(pts)] += p.Value
-	}
+	tps := make([]tslc.TimePoint, 0, len(pts))
 	var maxV float64
-	for _, v := range buckets {
-		maxV = max(maxV, v)
+	for _, p := range pts {
+		ts, ok := parseBucketTime(p.Label)
+		if !ok {
+			continue
+		}
+		tps = append(tps, tslc.TimePoint{Time: ts, Value: p.Value})
+		maxV = max(maxV, p.Value)
+	}
+	if len(tps) == 0 {
+		return ui.Dim.Render("no time series data") + "\n"
 	}
 	if maxV == 0 {
 		return ui.Dim.Render("no activity in this window") + "\n"
 	}
 
-	// each column is (value/max * height) cells tall, with the
-	// fractional remainder drawn as a partial block on its top cell
-	var rows []string
-	for row := chartHeight - 1; row >= 0; row-- {
-		var line strings.Builder
-		for _, v := range buckets {
-			cells := v / maxV * chartHeight
-			switch {
-			case cells >= float64(row+1):
-				line.WriteRune('█')
-			case cells > float64(row):
-				frac := cells - float64(row)
-				line.WriteRune(ui.SparkRunes[max(0, int(frac*8)-1)])
-			default:
-				line.WriteRune(' ')
-			}
-		}
-		prefix := strings.Repeat(" ", 7)
-		if row == chartHeight-1 {
-			prefix = ui.Dim.Render(fmt.Sprintf("%6.0f ", maxV))
-		} else if row == 0 {
-			prefix = ui.Dim.Render(fmt.Sprintf("%6.0f ", 0.0))
-		}
-		rows = append(rows, prefix+ui.OK.Render(line.String()))
-	}
-	axis := strings.Repeat(" ", 7) +
-		ui.Dim.Render(isoDate(m.res.TimeRange.StartDate)+
-			strings.Repeat(" ", max(1, len(buckets)-20))+
-			isoDate(m.res.TimeRange.EndDate))
-	return strings.Join(rows, "\n") + "\n" + axis + "\n"
+	chart := tslc.New(max(40, m.width-2), chartHeight+3,
+		tslc.WithTimeSeries(tps),
+		tslc.WithYRange(0, maxV),
+		tslc.WithAxesStyles(ui.Dim, ui.Dim),
+		tslc.WithStyle(ui.OK),
+	)
+	chart.DrawBraille()
+	return chart.View() + "\n"
 }
 
 // panelGrid lays the breakdown panels out in responsive columns.
