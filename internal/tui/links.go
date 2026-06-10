@@ -143,6 +143,9 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pending = ""
 			m.status = ""
 		}
+		// action keys return here and are never forwarded to the table —
+		// its default keymap also binds some of them (e.g. 'd' is half
+		// page down, which would move the cursor mid-confirmation)
 		switch key {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
@@ -154,11 +157,13 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.loading = true
 				return m, m.fetch(m.pageNo + 1)
 			}
+			return m, nil
 		case "left", "p":
 			if m.pageNo > 1 {
 				m.loading = true
 				return m, m.fetch(m.pageNo - 1)
 			}
+			return m, nil
 		case "o":
 			if it := m.selected(); it != nil {
 				if err := m.openBrowser(m.shortURL(it)); err != nil {
@@ -167,6 +172,7 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.status = ui.Dim.Render("opened " + m.shortURL(it))
 				}
 			}
+			return m, nil
 		case "c":
 			if it := m.selected(); it != nil {
 				if err := m.copyText(m.shortURL(it)); err != nil {
@@ -175,14 +181,16 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.status = ui.OK.Render("✓ copied " + m.shortURL(it))
 				}
 			}
+			return m, nil
 		case "t":
 			if it := m.selected(); it != nil {
 				return m, m.toggleStatus(it)
 			}
+			return m, nil
 		case "d":
 			it := m.selected()
 			if it == nil {
-				break
+				return m, nil
 			}
 			if m.pending == it.ID {
 				m.pending = ""
@@ -190,6 +198,7 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.pending = it.ID
 			m.status = ui.Err.Render("delete "+it.Alias+"?") + ui.Dim.Render(" press d again to confirm")
+			return m, nil
 		}
 	}
 
