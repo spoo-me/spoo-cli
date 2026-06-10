@@ -17,3 +17,6 @@ var (
 	Box     = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(Accent).Padding(0, 2)
 	KeyHint = lipgloss.NewStyle().Foreground(Muted).Italic(true)
 )
+
+// SparkRunes are the eight block heights used for sparkline charts.
+var SparkRunes = []rune("▁▂▃▄▅▆▇█")

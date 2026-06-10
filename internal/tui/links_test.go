@@ -290,3 +290,90 @@ func TestDetailViewShowsFullFields(t *testing.T) {
 		}
 	}
 }
+
+// Rage-scrolling with the pane open must fire ZERO stats requests:
+// each move only re-arms the debounce, and stale ticks are dropped.
+func TestStatsDebounceDropsStaleTicks(t *testing.T) {
+	var statsCalls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/v1/stats") {
+			statsCalls++
+		}
+		w.Write([]byte(`{"scope":"all","summary":{"total_clicks":1},"metrics":{}}`))
+	}))
+	defer srv.Close()
+
+	m := newLinksModelWithPage(t, srv.URL)
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // opens pane, arms seq 1
+	m = next.(LinksModel)
+	seq1 := m.statsSeq
+
+	m, _ = pressKey(t, m, 'j') // arms seq 2
+	m, _ = pressKey(t, m, 'j') // arms seq 3
+	if m.statsSeq != seq1+2 {
+		t.Fatalf("statsSeq = %d, want %d", m.statsSeq, seq1+2)
+	}
+
+	// stale ticks (seq 1 and 2) arrive — both must be dropped
+	for _, seq := range []int{seq1, seq1 + 1} {
+		next, cmd := m.Update(statsTickMsg{seq: seq})
+		m = next.(LinksModel)
+		if cmd != nil {
+			t.Fatalf("stale tick seq=%d triggered a fetch", seq)
+		}
+	}
+	if statsCalls != 0 {
+		t.Fatalf("stats endpoint hit %d times during scroll, want 0", statsCalls)
+	}
+
+	// the current tick fetches exactly once, for the rested row
+	next, cmd := m.Update(statsTickMsg{seq: m.statsSeq})
+	m = next.(LinksModel)
+	if cmd == nil {
+		t.Fatal("current tick did not fetch")
+	}
+	msg := cmd()
+	if statsCalls != 1 {
+		t.Fatalf("stats calls = %d, want 1", statsCalls)
+	}
+	sm, ok := msg.(statsMsg)
+	if !ok || sm.alias != "third" {
+		t.Fatalf("fetched %+v, want stats for third (the rested row)", msg)
+	}
+}
+
+// cached rows schedule nothing — revisiting is free.
+func TestStatsCacheSkipsRefetch(t *testing.T) {
+	m := newLinksModelWithPage(t, "http://unused.invalid")
+	m.stats["first"] = statsEntry{res: &api.StatsResponse{}}
+	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(LinksModel)
+	if cmd != nil {
+		t.Fatal("opening the pane on a cached row scheduled a fetch")
+	}
+	if !m.showDetail {
+		t.Fatal("pane did not open")
+	}
+}
+
+// once stats land, the pane renders the analytics section.
+func TestDetailRendersAnalytics(t *testing.T) {
+	m := newLinksModelWithPage(t, "http://unused.invalid")
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(LinksModel)
+	next, _ = m.Update(statsMsg{alias: "first", res: &api.StatsResponse{
+		Summary: api.StatsSummary{TotalClicks: 10, UniqueClicks: 4},
+		Metrics: map[string][]map[string]any{
+			"clicks_by_time":    {{"time": "2026-06-01", "clicks": 10.0}},
+			"clicks_by_browser": {{"browser": "Chrome", "clicks": 9.0}},
+			"clicks_by_country": {{"country": "IN", "clicks": 10.0}},
+		},
+	}})
+	m = next.(LinksModel)
+	view := m.View().Content
+	for _, want := range []string{"analytics", "4 of 10 clicks", "Chrome (90%)", "IN (100%)"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("analytics section missing %q:\n%s", want, view)
+		}
+	}
+}

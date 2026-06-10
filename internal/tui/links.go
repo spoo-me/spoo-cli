@@ -22,6 +22,10 @@ const (
 	// splitMinWidth is the narrowest terminal that fits the side-by-side
 	// master-detail layout; below it the detail pane goes full screen.
 	splitMinWidth = 100
+	// statsDebounce is how long the selection must rest before the pane
+	// fetches that link's analytics — scrolling through rows costs zero
+	// API calls; only the row you stop on is fetched (then cached).
+	statsDebounce = 300 * time.Millisecond
 )
 
 // sortFields is the cycle order for the 's' key.
@@ -35,6 +39,23 @@ type pageMsg struct {
 type actionMsg struct {
 	note string
 	err  error
+}
+
+// statsTickMsg fires after the debounce delay; seq identifies which
+// selection scheduled it so stale ticks are dropped.
+type statsTickMsg struct {
+	seq int
+}
+
+type statsMsg struct {
+	alias string
+	res   *api.StatsResponse
+	err   error
+}
+
+type statsEntry struct {
+	res *api.StatsResponse
+	err error
 }
 
 // LinksModel is the interactive link browser: a paginated table over
@@ -52,6 +73,8 @@ type LinksModel struct {
 	searchBox  textinput.Model
 	searching  bool
 	showDetail bool // detail pane open; it always reflects the selected row
+	stats      map[string]statsEntry
+	statsSeq   int // bumped on selection change; stale debounce ticks no-op
 	page       *api.URLPage
 	pageNo     int
 	status     string // transient status-bar message
@@ -84,6 +107,7 @@ func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, open
 		opts:        opts,
 		tbl:         tbl,
 		searchBox:   search,
+		stats:       map[string]statsEntry{},
 		pageNo:      max(1, opts.Page),
 		loading:     true,
 		width:       80,
@@ -185,6 +209,24 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = ui.OK.Render("✓ " + msg.note)
 		return m, m.fetch(m.pageNo)
 
+	case statsTickMsg:
+		// only the most recent selection's tick survives the debounce
+		if msg.seq != m.statsSeq || !m.showDetail {
+			return m, nil
+		}
+		it := m.selected()
+		if it == nil {
+			return m, nil
+		}
+		if _, ok := m.stats[it.Alias]; ok {
+			return m, nil
+		}
+		return m, m.fetchStats(it.Alias)
+
+	case statsMsg:
+		m.stats[msg.alias] = statsEntry{res: msg.res, err: msg.err}
+		return m, nil
+
 	case tea.KeyPressMsg:
 		if m.searching {
 			return m.updateSearch(msg)
@@ -244,10 +286,14 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		if m.showDetail {
 			m.showDetail = false
-		} else if m.selected() != nil {
-			m.showDetail = true
+			m.relayout()
+			return m, nil
 		}
-		m.relayout()
+		if m.selected() != nil {
+			m.showDetail = true
+			m.relayout()
+			return m, m.scheduleStats()
+		}
 		return m, nil
 	case "r":
 		m.loading = true
@@ -291,9 +337,41 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.armOrConfirmDelete(m.selected())
 	}
 
+	prev := m.tbl.Cursor()
 	var cmd tea.Cmd
 	m.tbl, cmd = m.tbl.Update(msg)
+	if m.showDetail && m.tbl.Cursor() != prev {
+		return m, tea.Batch(cmd, m.scheduleStats())
+	}
 	return m, cmd
+}
+
+// scheduleStats arms the debounce timer for the current selection.
+func (m *LinksModel) scheduleStats() tea.Cmd {
+	it := m.selected()
+	if it == nil {
+		return nil
+	}
+	if _, ok := m.stats[it.Alias]; ok {
+		return nil // already loaded; the pane renders from cache
+	}
+	m.statsSeq++
+	seq := m.statsSeq
+	return tea.Tick(statsDebounce, func(time.Time) tea.Msg {
+		return statsTickMsg{seq: seq}
+	})
+}
+
+func (m LinksModel) fetchStats(alias string) tea.Cmd {
+	client := m.client
+	return func() tea.Msg {
+		res, err := client.Stats(context.Background(), api.StatsQuery{
+			Scope:     "all",
+			ShortCode: alias,
+			GroupBy:   []string{"time", "browser", "country", "referrer"},
+		})
+		return statsMsg{alias: alias, res: res, err: err}
+	}
 }
 
 func (m LinksModel) armOrConfirmDelete(it *api.URLItem) (tea.Model, tea.Cmd) {
@@ -466,7 +544,70 @@ func (m LinksModel) detailView(width int) string {
 	if it.Domain != "" {
 		lines = append(lines, label("domain")+it.Domain)
 	}
+	lines = append(lines, "", ui.Title.Render("analytics"))
+	lines = append(lines, m.analyticsLines(it.Alias, label, width)...)
 	return box.Render(strings.Join(lines, "\n"))
+}
+
+// analyticsLines renders the per-link stats section of the detail pane
+// from the debounced cache; before the fetch lands it shows a loader.
+func (m LinksModel) analyticsLines(alias string, label func(string) string, width int) []string {
+	e, ok := m.stats[alias]
+	if !ok {
+		return []string{ui.Dim.Render("loading…")}
+	}
+	if e.err != nil || e.res == nil {
+		return []string{ui.Dim.Render("unavailable")}
+	}
+	res := e.res
+	if res.Summary.TotalClicks == 0 {
+		return []string{ui.Dim.Render("no clicks yet")}
+	}
+	total := float64(res.Summary.TotalClicks)
+	return []string{
+		label("trend") + miniSpark(res.Points("time", "clicks"), max(20, width-24)),
+		label("unique") + fmt.Sprintf("%d of %d clicks", res.Summary.UniqueClicks, res.Summary.TotalClicks),
+		label("top browser") + topOf(res, "browser", total),
+		label("top country") + topOf(res, "country", total),
+		label("top referrer") + topOf(res, "referrer", total),
+	}
+}
+
+// miniSpark draws a compact sparkline of the most recent points.
+func miniSpark(pts []api.MetricPoint, width int) string {
+	if len(pts) > width {
+		pts = pts[len(pts)-width:]
+	}
+	var maxV float64
+	for _, p := range pts {
+		maxV = max(maxV, p.Value)
+	}
+	if maxV == 0 {
+		return ui.Dim.Render("flat")
+	}
+	var b strings.Builder
+	for _, p := range pts {
+		b.WriteRune(ui.SparkRunes[int(p.Value/maxV*float64(len(ui.SparkRunes)-1))])
+	}
+	return b.String()
+}
+
+// topOf names the dominant label of a dimension with its share.
+func topOf(res *api.StatsResponse, dimension string, total float64) string {
+	pts := res.Points(dimension, "clicks")
+	if len(pts) == 0 {
+		return "—"
+	}
+	best := pts[0]
+	for _, p := range pts[1:] {
+		if p.Value > best.Value {
+			best = p
+		}
+	}
+	if total > 0 {
+		return fmt.Sprintf("%s (%.0f%%)", best.Label, best.Value/total*100)
+	}
+	return best.Label
 }
 
 func isoDate(s string) string {

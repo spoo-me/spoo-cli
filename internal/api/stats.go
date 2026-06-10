@@ -59,6 +59,28 @@ type StatsResponse struct {
 	GeneratedAt     string                      `json:"generated_at"`
 }
 
+type MetricPoint struct {
+	Label string
+	Value float64
+}
+
+// Points extracts (label, value) pairs from the loosely typed metrics
+// payload for one dimension/metric pair, e.g. ("browser", "clicks") →
+// the "clicks_by_browser" series with labels from the "browser" key.
+func (r *StatsResponse) Points(dimension, metric string) []MetricPoint {
+	pts := r.Metrics[metric+"_by_"+dimension]
+	out := make([]MetricPoint, 0, len(pts))
+	for _, p := range pts {
+		label, _ := p[dimension].(string)
+		value, ok := p[metric].(float64)
+		if label == "" || !ok {
+			continue
+		}
+		out = append(out, MetricPoint{Label: label, Value: value})
+	}
+	return out
+}
+
 func (c *Client) Stats(ctx context.Context, q StatsQuery) (*StatsResponse, error) {
 	var out StatsResponse
 	if err := c.do(ctx, http.MethodGet, "/api/v1/stats", q.values(), nil, &out); err != nil {
