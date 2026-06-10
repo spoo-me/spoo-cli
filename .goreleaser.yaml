@@ -1,0 +1,52 @@
+version: 2
+project_name: spoo
+
+builds:
+  - id: spoo
+    main: ./cmd/spoo
+    binary: spoo
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+nfpms:
+  - formats: [deb, rpm, apk]
+    description: The official command-line client for spoo.me
+    homepage: https://spoo.me
+    license: Apache-2.0
+    maintainer: spoo.me <support@spoo.me>
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github-native
+
+# Uncomment once the spoo-me/homebrew-tap repo exists and a
+# cross-repo token is configured as the TAP_GITHUB_TOKEN secret.
+# brews:
+#   - repository:
+#       owner: spoo-me
+#       name: homebrew-tap
+#       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+#     homepage: https://spoo.me
+#     description: The official command-line client for spoo.me
+#     license: Apache-2.0
+
+# Uncomment once the spoo-me/scoop-bucket repo exists.
+# scoops:
+#   - repository:
+#       owner: spoo-me
+#       name: scoop-bucket
+#       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+#     homepage: https://spoo.me
+#     description: The official command-line client for spoo.me
+#     license: Apache-2.0
