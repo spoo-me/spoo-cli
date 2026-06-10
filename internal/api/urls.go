@@ -8,20 +8,22 @@ import (
 	"strconv"
 )
 
-// URLItem is a row from GET /api/v1/urls. Note: this endpoint speaks
-// camelCase, unlike the snake_case shorten/update responses.
+// URLItem is a row from GET /api/v1/urls. The envelope is camelCase
+// (pageSize, hasNext) but items are snake_case; expire_after is a Unix
+// timestamp — see UrlListItem in the backend's schemas/dto/responses/url.py.
 type URLItem struct {
 	ID           string `json:"id"`
 	Alias        string `json:"alias"`
-	LongURL      string `json:"longUrl"`
-	CreatedAt    string `json:"createdAt"`
-	LastClick    string `json:"lastClick"`
-	TotalClicks  int    `json:"totalClicks"`
+	LongURL      string `json:"long_url"`
+	CreatedAt    string `json:"created_at"`
+	LastClick    string `json:"last_click"`
+	TotalClicks  int    `json:"total_clicks"`
 	Status       string `json:"status"`
-	PasswordSet  bool   `json:"passwordSet"`
-	MaxClicksSet bool   `json:"maxClicksSet"`
-	ExpireAfter  string `json:"expireAfter"`
-	PrivateStats bool   `json:"privateStats"`
+	PasswordSet  bool   `json:"password_set"`
+	MaxClicks    *int   `json:"max_clicks"`
+	ExpireAfter  *int64 `json:"expire_after"` // Unix seconds, null when unset
+	PrivateStats bool   `json:"private_stats"`
+	BlockBots    bool   `json:"block_bots"`
 	Domain       string `json:"domain"`
 }
 

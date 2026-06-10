@@ -21,7 +21,7 @@ func TestListURLsBuildsQueryAndFilter(t *testing.T) {
 		if filter["search"] != "launch" || filter["status"] != "ACTIVE" {
 			t.Errorf("unexpected filter: %v", filter)
 		}
-		w.Write([]byte(`{"items":[{"id":"a1","alias":"launch","longUrl":"https://x.com","totalClicks":42,"status":"ACTIVE"}],"page":2,"pageSize":50,"total":51,"hasNext":false}`))
+		w.Write([]byte(`{"items":[{"id":"a1","alias":"launch","long_url":"https://x.com","total_clicks":42,"status":"ACTIVE","password_set":false}],"page":2,"pageSize":50,"total":51,"hasNext":false}`))
 	}))
 	defer srv.Close()
 

@@ -16,7 +16,7 @@ func TestLinksListJSON(t *testing.T) {
 		if r.URL.Path != "/api/v1/urls" {
 			t.Errorf("path = %s", r.URL.Path)
 		}
-		w.Write([]byte(`{"items":[{"id":"a1","alias":"launch","longUrl":"https://x.com","totalClicks":42,"status":"ACTIVE","createdAt":"2026-06-01T00:00:00Z"}],"page":1,"pageSize":20,"total":1,"hasNext":false}`))
+		w.Write([]byte(`{"items":[{"id":"a1","alias":"launch","long_url":"https://x.com","total_clicks":42,"status":"ACTIVE","created_at":"2026-06-01T00:00:00Z"}],"page":1,"pageSize":20,"total":1,"hasNext":false}`))
 	}))
 	defer srv.Close()
 	pointDepsAt(t, srv.URL)
@@ -40,7 +40,7 @@ func TestLinksListJSON(t *testing.T) {
 
 func TestLinksListPlainTable(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"items":[{"id":"a1","alias":"launch","longUrl":"https://x.com","totalClicks":42,"status":"ACTIVE","createdAt":"2026-06-01T00:00:00Z"}],"page":1,"pageSize":20,"total":1,"hasNext":false}`))
+		w.Write([]byte(`{"items":[{"id":"a1","alias":"launch","long_url":"https://x.com","total_clicks":42,"status":"ACTIVE","created_at":"2026-06-01T00:00:00Z"}],"page":1,"pageSize":20,"total":1,"hasNext":false}`))
 	}))
 	defer srv.Close()
 	pointDepsAt(t, srv.URL)
