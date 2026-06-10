@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"text/tabwriter"
 
 	tea "charm.land/bubbletea/v2"
@@ -34,11 +35,15 @@ toggle, delete). Piped or with --json it prints the list and exits.`,
 			if err != nil {
 				return err
 			}
+			// accept hyphenated flag values (total-clicks) for the API's
+			// snake_case fields, and case-insensitive status
+			opts.SortBy = strings.ReplaceAll(opts.SortBy, "-", "_")
+			opts.Status = normalizeStatus(opts.Status)
 			asJSON, _ := cmd.Flags().GetBool("json")
 			if asJSON || !stdoutIsTerminal(cmd) {
 				return printLinksList(cmd, d, opts, asJSON)
 			}
-			model := tui.NewLinks(d.client, d.cfg.APIBase, opts.Search, browser.OpenURL, clipboard.WriteAll)
+			model := tui.NewLinks(d.client, d.cfg.APIBase, opts, browser.OpenURL, clipboard.WriteAll)
 			final, err := tea.NewProgram(model).Run()
 			if err != nil {
 				return err
@@ -50,11 +55,11 @@ toggle, delete). Piped or with --json it prints the list and exits.`,
 		},
 	}
 	cmd.Flags().StringVar(&opts.Search, "search", "", "filter by alias or destination")
-	cmd.Flags().StringVar(&opts.Status, "status", "", "filter by status (ACTIVE, INACTIVE, BLOCKED, EXPIRED)")
+	cmd.Flags().StringVar(&opts.Status, "status", "", "filter by status (active, inactive, blocked, expired)")
 	cmd.Flags().StringVar(&opts.Domain, "domain", "", "filter by custom domain")
 	cmd.Flags().IntVar(&opts.Page, "page", 1, "page number")
 	cmd.Flags().IntVar(&opts.PageSize, "page-size", 20, "items per page (max 100)")
-	cmd.Flags().StringVar(&opts.SortBy, "sort", "created_at", "sort by: created_at, last_click, total_clicks")
+	cmd.Flags().StringVar(&opts.SortBy, "sort", "total_clicks", "sort by: total_clicks, created_at, last_click")
 	cmd.AddCommand(newLinksDeleteCmd(), newLinksUpdateCmd())
 	return cmd
 }

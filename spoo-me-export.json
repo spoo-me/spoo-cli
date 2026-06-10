@@ -1,0 +1,102 @@
+{
+    "scope": "all",
+    "filters": {
+        "short_code": [
+            "ga"
+        ]
+    },
+    "group_by": [
+        "time"
+    ],
+    "timezone": "UTC",
+    "metrics": {
+        "clicks_by_time": [
+            {
+                "time": "2026-06-03",
+                "clicks": 0
+            },
+            {
+                "time": "2026-06-04",
+                "clicks": 0
+            },
+            {
+                "time": "2026-06-05",
+                "clicks": 0
+            },
+            {
+                "time": "2026-06-06",
+                "clicks": 0
+            },
+            {
+                "time": "2026-06-07",
+                "clicks": 0
+            },
+            {
+                "time": "2026-06-08",
+                "clicks": 0
+            },
+            {
+                "time": "2026-06-09",
+                "clicks": 0
+            },
+            {
+                "time": "2026-06-10",
+                "clicks": 0
+            }
+        ],
+        "unique_clicks_by_time": [
+            {
+                "time": "2026-06-03",
+                "unique_clicks": 0
+            },
+            {
+                "time": "2026-06-04",
+                "unique_clicks": 0
+            },
+            {
+                "time": "2026-06-05",
+                "unique_clicks": 0
+            },
+            {
+                "time": "2026-06-06",
+                "unique_clicks": 0
+            },
+            {
+                "time": "2026-06-07",
+                "unique_clicks": 0
+            },
+            {
+                "time": "2026-06-08",
+                "unique_clicks": 0
+            },
+            {
+                "time": "2026-06-09",
+                "unique_clicks": 0
+            },
+            {
+                "time": "2026-06-10",
+                "unique_clicks": 0
+            }
+        ]
+    },
+    "time_range": {
+        "start_date": "2026-06-03 19:57:25.487973+00:00",
+        "end_date": "2026-06-10 19:57:25.487973+00:00"
+    },
+    "time_bucket_info": {
+        "strategy": "daily",
+        "interval_minutes": 1440,
+        "mongo_format": "%Y-%m-%d",
+        "display_format": "%Y-%m-%d",
+        "timezone": "UTC"
+    },
+    "summary": {
+        "total_clicks": 0,
+        "unique_clicks": 0,
+        "first_click": null,
+        "last_click": null,
+        "avg_redirection_time": 0
+    },
+    "generated_at": "2026-06-10 19:57:25.513561+00:00",
+    "api_version": "v1"
+}

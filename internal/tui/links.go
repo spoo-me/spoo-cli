@@ -8,13 +8,17 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
-const linksPageSize = 20
+const defaultPageSize = 20
+
+// sortFields is the cycle order for the 's' key.
+var sortFields = []string{"total_clicks", "created_at", "last_click"}
 
 type pageMsg struct {
 	page *api.URLPage
@@ -27,39 +31,52 @@ type actionMsg struct {
 }
 
 // LinksModel is the interactive link browser: a paginated table over
-// GET /api/v1/urls with open/copy/toggle/delete actions.
+// GET /api/v1/urls with open/copy/toggle/delete actions, plus live
+// search (/) and sort cycling (s).
 type LinksModel struct {
 	client      *api.Client
 	apiBase     string
 	openBrowser func(string) error
 	copyText    func(string) error
 
-	tbl     table.Model
-	page    *api.URLPage
-	pageNo  int
-	search  string
-	status  string // transient status-bar message
-	pending string // url id awaiting delete confirmation
-	loading bool
-	err     error
-	width   int
-	height  int
+	opts api.ListURLsOptions // current query: search, sort, status, page size
+
+	tbl       table.Model
+	searchBox textinput.Model
+	searching bool
+	page      *api.URLPage
+	pageNo    int
+	status    string // transient status-bar message
+	pending   string // url id awaiting delete confirmation
+	loading   bool
+	err       error
+	width     int
+	height    int
 }
 
-func NewLinks(client *api.Client, apiBase, search string, openBrowser, copyText func(string) error) LinksModel {
+func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, openBrowser, copyText func(string) error) LinksModel {
+	if opts.PageSize <= 0 {
+		opts.PageSize = defaultPageSize
+	}
+	if opts.SortBy == "" {
+		opts.SortBy = sortFields[0]
+	}
 	tbl := table.New(
 		table.WithColumns(linkColumns(80)),
 		table.WithFocused(true),
-		table.WithHeight(linksPageSize),
+		table.WithHeight(opts.PageSize),
 	)
+	search := textinput.New()
+	search.Placeholder = "search alias or destination…"
 	return LinksModel{
 		client:      client,
 		apiBase:     apiBase,
 		openBrowser: openBrowser,
 		copyText:    copyText,
+		opts:        opts,
 		tbl:         tbl,
-		pageNo:      1,
-		search:      search,
+		searchBox:   search,
+		pageNo:      max(1, opts.Page),
 		loading:     true,
 		width:       80,
 	}
@@ -80,11 +97,11 @@ func linkColumns(width int) []table.Column {
 func (m LinksModel) Init() tea.Cmd { return m.fetch(m.pageNo) }
 
 func (m LinksModel) fetch(pageNo int) tea.Cmd {
-	client, search := m.client, m.search
+	opts := m.opts
+	opts.Page = pageNo
+	client := m.client
 	return func() tea.Msg {
-		page, err := client.ListURLs(context.Background(), api.ListURLsOptions{
-			Page: pageNo, PageSize: linksPageSize, Search: search,
-		})
+		page, err := client.ListURLs(context.Background(), opts)
 		return pageMsg{page: page, err: err}
 	}
 }
@@ -125,6 +142,7 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.page = msg.page
 		m.pageNo = msg.page.Page
 		m.tbl.SetRows(m.rows())
+		m.tbl.GotoTop()
 		m.status = ""
 		return m, nil
 
@@ -137,74 +155,123 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.fetch(m.pageNo)
 
 	case tea.KeyPressMsg:
-		key := msg.String()
-		// any key other than a second 'd' cancels a pending delete
-		if m.pending != "" && key != "d" {
-			m.pending = ""
-			m.status = ""
+		if m.searching {
+			return m.updateSearch(msg)
 		}
-		// action keys return here and are never forwarded to the table —
-		// its default keymap also binds some of them (e.g. 'd' is half
-		// page down, which would move the cursor mid-confirmation)
-		switch key {
-		case "q", "esc", "ctrl+c":
-			return m, tea.Quit
-		case "r":
-			m.loading = true
-			return m, m.fetch(m.pageNo)
-		case "right", "n":
-			if m.page != nil && m.page.HasNext {
-				m.loading = true
-				return m, m.fetch(m.pageNo + 1)
-			}
-			return m, nil
-		case "left", "p":
-			if m.pageNo > 1 {
-				m.loading = true
-				return m, m.fetch(m.pageNo - 1)
-			}
-			return m, nil
-		case "o":
-			if it := m.selected(); it != nil {
-				if err := m.openBrowser(m.shortURL(it)); err != nil {
-					m.status = ui.Err.Render("✗ " + err.Error())
-				} else {
-					m.status = ui.Dim.Render("opened " + m.shortURL(it))
-				}
-			}
-			return m, nil
-		case "c":
-			if it := m.selected(); it != nil {
-				if err := m.copyText(m.shortURL(it)); err != nil {
-					m.status = ui.Err.Render("✗ " + err.Error())
-				} else {
-					m.status = ui.OK.Render("✓ copied " + m.shortURL(it))
-				}
-			}
-			return m, nil
-		case "t":
-			if it := m.selected(); it != nil {
-				return m, m.toggleStatus(it)
-			}
-			return m, nil
-		case "d":
-			it := m.selected()
-			if it == nil {
-				return m, nil
-			}
-			if m.pending == it.ID {
-				m.pending = ""
-				return m, m.deleteURL(it)
-			}
-			m.pending = it.ID
-			m.status = ui.Err.Render("delete "+it.Alias+"?") + ui.Dim.Render(" press d again to confirm")
-			return m, nil
-		}
+		return m.updateBrowse(msg)
 	}
 
 	var cmd tea.Cmd
 	m.tbl, cmd = m.tbl.Update(msg)
 	return m, cmd
+}
+
+// updateSearch handles keys while the search box is focused.
+func (m LinksModel) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "enter":
+		m.searching = false
+		m.searchBox.Blur()
+		m.opts.Search = strings.TrimSpace(m.searchBox.Value())
+		m.loading = true
+		return m, m.fetch(1)
+	case "esc":
+		m.searching = false
+		m.searchBox.Blur()
+		m.searchBox.SetValue(m.opts.Search)
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.searchBox, cmd = m.searchBox.Update(msg)
+	return m, cmd
+}
+
+// updateBrowse handles keys in normal browsing mode.
+func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	// any key other than a second 'd' cancels a pending delete
+	if m.pending != "" && key != "d" {
+		m.pending = ""
+		m.status = ""
+	}
+	// action keys return here and are never forwarded to the table —
+	// its default keymap also binds some of them (e.g. 'd' is half
+	// page down, which would move the cursor mid-confirmation)
+	switch key {
+	case "q", "esc", "ctrl+c":
+		return m, tea.Quit
+	case "r":
+		m.loading = true
+		return m, m.fetch(m.pageNo)
+	case "/":
+		m.searching = true
+		m.searchBox.SetValue(m.opts.Search)
+		return m, m.searchBox.Focus()
+	case "s":
+		m.opts.SortBy = nextSortField(m.opts.SortBy)
+		m.loading = true
+		return m, m.fetch(1)
+	case "right", "n":
+		if m.page != nil && m.page.HasNext {
+			m.loading = true
+			return m, m.fetch(m.pageNo + 1)
+		}
+		return m, nil
+	case "left", "p":
+		if m.pageNo > 1 {
+			m.loading = true
+			return m, m.fetch(m.pageNo - 1)
+		}
+		return m, nil
+	case "o":
+		if it := m.selected(); it != nil {
+			if err := m.openBrowser(m.shortURL(it)); err != nil {
+				m.status = ui.Err.Render("✗ " + err.Error())
+			} else {
+				m.status = ui.Dim.Render("opened " + m.shortURL(it))
+			}
+		}
+		return m, nil
+	case "c":
+		if it := m.selected(); it != nil {
+			if err := m.copyText(m.shortURL(it)); err != nil {
+				m.status = ui.Err.Render("✗ " + err.Error())
+			} else {
+				m.status = ui.OK.Render("✓ copied " + m.shortURL(it))
+			}
+		}
+		return m, nil
+	case "t":
+		if it := m.selected(); it != nil {
+			return m, m.toggleStatus(it)
+		}
+		return m, nil
+	case "d":
+		it := m.selected()
+		if it == nil {
+			return m, nil
+		}
+		if m.pending == it.ID {
+			m.pending = ""
+			return m, m.deleteURL(it)
+		}
+		m.pending = it.ID
+		m.status = ui.Err.Render("delete "+it.Alias+"?") + ui.Dim.Render(" press d again to confirm")
+		return m, nil
+	}
+
+	var cmd tea.Cmd
+	m.tbl, cmd = m.tbl.Update(msg)
+	return m, cmd
+}
+
+func nextSortField(current string) string {
+	for i, f := range sortFields {
+		if f == current {
+			return sortFields[(i+1)%len(sortFields)]
+		}
+	}
+	return sortFields[0]
 }
 
 func (m LinksModel) toggleStatus(it *api.URLItem) tea.Cmd {
@@ -254,8 +321,12 @@ func (m LinksModel) View() tea.View {
 	if m.page != nil {
 		title += ui.Dim.Render(fmt.Sprintf("  page %d · %d total", m.pageNo, m.page.Total))
 	}
-	if m.search != "" {
-		title += ui.Dim.Render("  search: " + m.search)
+	title += ui.Dim.Render("  sort: " + strings.ReplaceAll(m.opts.SortBy, "_", " "))
+	if m.opts.Status != "" {
+		title += ui.Dim.Render("  status: " + m.opts.Status)
+	}
+	if m.opts.Search != "" && !m.searching {
+		title += ui.Dim.Render("  search: " + m.opts.Search)
 	}
 	b.WriteString(title + "\n\n")
 
@@ -263,15 +334,21 @@ func (m LinksModel) View() tea.View {
 	case m.loading && m.page == nil:
 		b.WriteString(ui.Dim.Render("loading…") + "\n")
 	case m.page != nil && len(m.page.Items) == 0:
-		b.WriteString(ui.Dim.Render("no links yet — create one with `spoo shorten`") + "\n")
+		b.WriteString(ui.Dim.Render("no links match — create one with `spoo shorten`") + "\n")
 	default:
 		b.WriteString(m.tbl.View() + "\n")
 	}
 
-	if m.status != "" {
-		b.WriteString(m.status + "\n")
+	switch {
+	case m.searching:
+		b.WriteString(ui.Title.Render("/") + m.searchBox.View() + "\n")
+		b.WriteString(ui.KeyHint.Render("enter apply · esc cancel"))
+	default:
+		if m.status != "" {
+			b.WriteString(m.status + "\n")
+		}
+		b.WriteString(ui.KeyHint.Render("↑/↓ move · ←/→ pages · / search · s sort · o open · c copy · t toggle · d delete · r refresh · q quit"))
 	}
-	b.WriteString(ui.KeyHint.Render("↑/↓ move · ←/→ pages · o open · c copy · t toggle · d delete · r refresh · q quit"))
 
 	v := tea.NewView(b.String())
 	v.AltScreen = true
