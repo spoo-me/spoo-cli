@@ -134,7 +134,7 @@ func printShortURL(cmd *cobra.Command, res *api.ShortURL, asJSON bool) error {
 	body := ui.OK.Render("✓ Link created") + "\n\n" +
 		ui.Title.Render(res.ShortURL) + "\n" +
 		ui.Dim.Render("→ "+truncate(res.LongURL, 60))
-	fmt.Fprintln(out, ui.Box.Render(body))
+	fmt.Fprintln(prettyOut(cmd), ui.Box.Render(body))
 	return nil
 }
 

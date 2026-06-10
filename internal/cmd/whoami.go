@@ -27,7 +27,7 @@ func runWhoami(cmd *cobra.Command) error {
 		return err
 	}
 	if _, err := d.store.Load(); errors.Is(err, auth.ErrNotLoggedIn) {
-		fmt.Fprintln(cmd.OutOrStdout(), ui.Dim.Render("Not logged in. Run `spoo auth login` — anonymous shortening still works."))
+		fmt.Fprintln(prettyOut(cmd), ui.Dim.Render("Not logged in. Run `spoo auth login` — anonymous shortening still works."))
 		return nil
 	}
 	user, err := d.client.Me(cmd.Context())
@@ -41,7 +41,7 @@ func runWhoami(cmd *cobra.Command) error {
 	if !user.EmailVerified {
 		verified = ui.Err.Render("unverified")
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "%s (%s)\n%s\n",
+	fmt.Fprintf(prettyOut(cmd), "%s (%s)\n%s\n",
 		ui.Title.Render(user.Email), verified, ui.Dim.Render("plan: "+user.Plan))
 	return nil
 }

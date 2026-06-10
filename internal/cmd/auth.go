@@ -76,7 +76,7 @@ func loginWithBrowser(cmd *cobra.Command, d *deps) error {
 	}); err != nil {
 		return err
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), ui.OK.Render("✓ Logged in as ")+ui.Title.Render(tokens.User.Email))
+	fmt.Fprintln(prettyOut(cmd), ui.OK.Render("✓ Logged in as ")+ui.Title.Render(tokens.User.Email))
 	return nil
 }
 
@@ -98,7 +98,7 @@ func loginWithToken(cmd *cobra.Command, d *deps) error {
 		_ = d.store.Clear()
 		return fmt.Errorf("API key rejected: %w", err)
 	}
-	fmt.Fprintln(cmd.OutOrStdout(), ui.OK.Render("✓ Logged in as ")+ui.Title.Render(user.Email))
+	fmt.Fprintln(prettyOut(cmd), ui.OK.Render("✓ Logged in as ")+ui.Title.Render(user.Email))
 	return nil
 }
 
@@ -114,7 +114,7 @@ func newLogoutCmd() *cobra.Command {
 			if err := d.store.Clear(); err != nil {
 				return err
 			}
-			fmt.Fprintln(cmd.OutOrStdout(), ui.Dim.Render("Logged out."))
+			fmt.Fprintln(prettyOut(cmd), ui.Dim.Render("Logged out."))
 			return nil
 		},
 	}
