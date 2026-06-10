@@ -46,26 +46,36 @@ func (e *APIError) Error() string {
 }
 
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
+	resp, err := c.request(ctx, method, path, query, body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return decode(resp, out)
+}
+
+// request performs an authenticated call and returns the raw response,
+// refreshing device tokens once on 401. Callers own the response body.
+func (c *Client) request(ctx context.Context, method, path string, query url.Values, body any) (*http.Response, error) {
 	creds, err := c.store.Load()
 	if err != nil && !errors.Is(err, auth.ErrNotLoggedIn) {
-		return err
+		return nil, err
 	}
 	resp, err := c.send(ctx, method, path, query, body, creds)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if resp.StatusCode == http.StatusUnauthorized && creds != nil &&
 		creds.Mode == auth.ModeDevice && creds.RefreshToken != "" {
 		resp.Body.Close()
 		if creds, err = c.refreshTokens(ctx, creds); err != nil {
-			return err
+			return nil, err
 		}
 		if resp, err = c.send(ctx, method, path, query, body, creds); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	defer resp.Body.Close()
-	return decode(resp, out)
+	return resp, nil
 }
 
 func (c *Client) send(ctx context.Context, method, path string, query url.Values, body any, creds *auth.Credentials) (*http.Response, error) {
