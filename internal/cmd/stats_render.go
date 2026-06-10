@@ -75,8 +75,12 @@ func renderStats(res *api.StatsResponse, target string) string {
 	if target != "" {
 		header = target
 	}
+	title := ui.Title.Render("Stats · " + header)
+	if res.TimeRange.StartDate != "" {
+		title += ui.Dim.Render("  " + isoDay(res.TimeRange.StartDate) + " → " + isoDay(res.TimeRange.EndDate))
+	}
 	summary := fmt.Sprintf("%s\n\n%s  %s\n%s  %s",
-		ui.Title.Render("Stats · "+header),
+		title,
 		ui.OK.Render(fmt.Sprintf("%d clicks", res.Summary.TotalClicks)),
 		ui.Dim.Render(fmt.Sprintf("%d unique", res.Summary.UniqueClicks)),
 		firstLast(res.Summary),
@@ -101,6 +105,13 @@ func renderStats(res *api.StatsResponse, target string) string {
 		}
 	}
 	return strings.Join(sections, "\n")
+}
+
+func isoDay(s string) string {
+	if len(s) >= 10 {
+		return s[:10]
+	}
+	return s
 }
 
 func firstLast(s api.StatsSummary) string {

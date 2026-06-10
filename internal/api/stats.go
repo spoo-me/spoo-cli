@@ -47,6 +47,11 @@ type StatsSummary struct {
 	AvgRedirectionTime float64 `json:"avg_redirection_time"`
 }
 
+type StatsTimeRange struct {
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+}
+
 // StatsResponse keeps Metrics loosely typed: keys are dynamic
 // ("clicks_by_browser", "unique_clicks_by_time", ...) and each point
 // carries its dimension label under the dimension's own name.
@@ -54,10 +59,16 @@ type StatsResponse struct {
 	Scope           string                      `json:"scope"`
 	ShortCode       string                      `json:"short_code"`
 	Summary         StatsSummary                `json:"summary"`
+	TimeRange       StatsTimeRange              `json:"time_range"`
 	Metrics         map[string][]map[string]any `json:"metrics"`
 	ComputedMetrics map[string]float64          `json:"computed_metrics"`
 	GeneratedAt     string                      `json:"generated_at"`
 }
+
+// MaxRangeDays is the widest window the stats endpoint accepts; without
+// explicit dates it defaults to only the LAST 7 DAYS, so clients that
+// want "all recent activity" should request this window explicitly.
+const MaxRangeDays = 90
 
 type MetricPoint struct {
 	Label string

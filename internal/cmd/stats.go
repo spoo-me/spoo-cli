@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -29,6 +30,11 @@ With a short code, shows that link — public stats work without login.`,
 			d, err := newDeps()
 			if err != nil {
 				return err
+			}
+			// the API's implicit default is only 7 days; use the widest
+			// window unless the user narrows it themselves
+			if from == "" && to == "" {
+				from = timeNow().UTC().AddDate(0, 0, -api.MaxRangeDays).Format(time.RFC3339)
 			}
 			q := api.StatsQuery{
 				StartDate: from,
@@ -60,8 +66,8 @@ With a short code, shows that link — public stats work without login.`,
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&from, "from", "", "start date (ISO 8601)")
-	cmd.Flags().StringVar(&to, "to", "", "end date (ISO 8601)")
+	cmd.Flags().StringVar(&from, "from", "", "start date, ISO 8601 (default: 90 days ago)")
+	cmd.Flags().StringVar(&to, "to", "", "end date, ISO 8601 (default: now)")
 	cmd.Flags().StringVar(&tz, "tz", "", "IANA timezone for time buckets (default UTC)")
 	return cmd
 }

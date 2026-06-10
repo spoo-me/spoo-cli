@@ -365,9 +365,12 @@ func (m *LinksModel) scheduleStats() tea.Cmd {
 func (m LinksModel) fetchStats(alias string) tea.Cmd {
 	client := m.client
 	return func() tea.Msg {
+		// the endpoint defaults to a 7-day window; ask for the maximum
+		from := time.Now().UTC().AddDate(0, 0, -api.MaxRangeDays).Format(time.RFC3339)
 		res, err := client.Stats(context.Background(), api.StatsQuery{
 			Scope:     "all",
 			ShortCode: alias,
+			StartDate: from,
 			GroupBy:   []string{"time", "browser", "country", "referrer"},
 		})
 		return statsMsg{alias: alias, res: res, err: err}
@@ -561,11 +564,11 @@ func (m LinksModel) analyticsLines(alias string, label func(string) string, widt
 	}
 	res := e.res
 	if res.Summary.TotalClicks == 0 {
-		return []string{ui.Dim.Render("no clicks yet")}
+		return []string{ui.Dim.Render(fmt.Sprintf("no clicks in the last %d days", api.MaxRangeDays))}
 	}
 	total := float64(res.Summary.TotalClicks)
 	return []string{
-		label("trend") + miniSpark(res.Points("time", "clicks"), max(20, width-24)),
+		label("trend (90d)") + miniSpark(res.Points("time", "clicks"), max(20, width-24)),
 		label("unique") + fmt.Sprintf("%d of %d clicks", res.Summary.UniqueClicks, res.Summary.TotalClicks),
 		label("top browser") + topOf(res, "browser", total),
 		label("top country") + topOf(res, "country", total),
