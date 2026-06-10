@@ -100,7 +100,13 @@ func renderStats(res *api.StatsResponse, target string) string {
 		{"country", "Countries"},
 		{"referrer", "Referrers"},
 	} {
-		if chart := renderBarChart(dim.title, res.Points(dim.key, "clicks"), total); chart != "" {
+		pts := res.Points(dim.key, "clicks")
+		if dim.key == "country" {
+			for i := range pts {
+				pts[i].Label = ui.CountryLabel(pts[i].Label)
+			}
+		}
+		if chart := renderBarChart(dim.title, pts, total); chart != "" {
 			sections = append(sections, chart)
 		}
 	}

@@ -362,18 +362,36 @@ func TestDetailRendersAnalytics(t *testing.T) {
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(LinksModel)
 	next, _ = m.Update(statsMsg{alias: "first", res: &api.StatsResponse{
-		Summary: api.StatsSummary{TotalClicks: 10, UniqueClicks: 4},
+		Summary: api.StatsSummary{TotalClicks: 10, UniqueClicks: 4, AvgRedirectionTime: 42},
 		Metrics: map[string][]map[string]any{
 			"clicks_by_time":    {{"time": "2026-06-01", "clicks": 10.0}},
 			"clicks_by_browser": {{"browser": "Chrome", "clicks": 9.0}},
+			"clicks_by_os":      {{"os": "Windows", "clicks": 6.0}},
 			"clicks_by_country": {{"country": "IN", "clicks": 10.0}},
 		},
 	}})
 	m = next.(LinksModel)
 	view := m.View().Content
-	for _, want := range []string{"analytics", "4 of 10 clicks", "Chrome (90%)", "IN (100%)"} {
+	for _, want := range []string{"analytics", "4 of 10 clicks", "Chrome", "(90%)", "Windows", "🇮🇳 IN", "42ms"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("analytics section missing %q:\n%s", want, view)
 		}
+	}
+}
+
+// the sparkline covers the whole series: early activity must not be
+// truncated off the left edge when there are more points than columns.
+func TestMiniSparkDownsamplesWholeSeries(t *testing.T) {
+	pts := make([]api.MetricPoint, 90)
+	for i := range pts {
+		pts[i] = api.MetricPoint{Label: "d", Value: 0}
+	}
+	pts[3].Value = 28 // old spike, far outside the last 30 columns
+	got := miniSpark(pts, 30)
+	if strings.Contains(got, "flat") {
+		t.Fatalf("old spike was cut off: %q", got)
+	}
+	if !strings.ContainsRune(got, '█') {
+		t.Fatalf("expected a full-height bucket for the spike: %q", got)
 	}
 }

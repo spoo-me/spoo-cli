@@ -371,7 +371,7 @@ func (m LinksModel) fetchStats(alias string) tea.Cmd {
 			Scope:     "all",
 			ShortCode: alias,
 			StartDate: from,
-			GroupBy:   []string{"time", "browser", "country", "referrer"},
+			GroupBy:   []string{"time", "browser", "os", "country", "referrer"},
 		})
 		return statsMsg{alias: alias, res: res, err: err}
 	}
@@ -567,36 +567,49 @@ func (m LinksModel) analyticsLines(alias string, label func(string) string, widt
 		return []string{ui.Dim.Render(fmt.Sprintf("no clicks in the last %d days", api.MaxRangeDays))}
 	}
 	total := float64(res.Summary.TotalClicks)
+	unique := fmt.Sprintf("%d of %d clicks", res.Summary.UniqueClicks, res.Summary.TotalClicks)
+	if rate, ok := res.ComputedMetrics["unique_click_rate"]; ok {
+		unique += ui.Dim.Render(fmt.Sprintf(" (%.0f%%)", rate))
+	}
 	return []string{
 		label("trend (90d)") + miniSpark(res.Points("time", "clicks"), max(20, width-24)),
-		label("unique") + fmt.Sprintf("%d of %d clicks", res.Summary.UniqueClicks, res.Summary.TotalClicks),
-		label("top browser") + topOf(res, "browser", total),
-		label("top country") + topOf(res, "country", total),
-		label("top referrer") + topOf(res, "referrer", total),
+		label("unique") + unique,
+		label("avg redirect") + fmt.Sprintf("%.0fms", res.Summary.AvgRedirectionTime),
+		label("top browser") + topOf(res, "browser", total, nil),
+		label("top os") + topOf(res, "os", total, nil),
+		label("top country") + topOf(res, "country", total, ui.CountryLabel),
+		label("top referrer") + topOf(res, "referrer", total, nil),
 	}
 }
 
-// miniSpark draws a compact sparkline of the most recent points.
+// miniSpark draws a compact sparkline covering the WHOLE series: when
+// there are more points than columns they are summed into buckets, so
+// old activity is never silently cut off the left edge.
 func miniSpark(pts []api.MetricPoint, width int) string {
-	if len(pts) > width {
-		pts = pts[len(pts)-width:]
+	if len(pts) == 0 || width < 1 {
+		return ui.Dim.Render("no data")
+	}
+	buckets := make([]float64, min(width, len(pts)))
+	for i, p := range pts {
+		buckets[i*len(buckets)/len(pts)] += p.Value
 	}
 	var maxV float64
-	for _, p := range pts {
-		maxV = max(maxV, p.Value)
+	for _, v := range buckets {
+		maxV = max(maxV, v)
 	}
 	if maxV == 0 {
 		return ui.Dim.Render("flat")
 	}
 	var b strings.Builder
-	for _, p := range pts {
-		b.WriteRune(ui.SparkRunes[int(p.Value/maxV*float64(len(ui.SparkRunes)-1))])
+	for _, v := range buckets {
+		b.WriteRune(ui.SparkRunes[int(v/maxV*float64(len(ui.SparkRunes)-1))])
 	}
 	return b.String()
 }
 
-// topOf names the dominant label of a dimension with its share.
-func topOf(res *api.StatsResponse, dimension string, total float64) string {
+// topOf names the dominant label of a dimension with its share; format
+// optionally decorates the label (e.g. country flag emoji).
+func topOf(res *api.StatsResponse, dimension string, total float64, format func(string) string) string {
 	pts := res.Points(dimension, "clicks")
 	if len(pts) == 0 {
 		return "—"
@@ -607,10 +620,14 @@ func topOf(res *api.StatsResponse, dimension string, total float64) string {
 			best = p
 		}
 	}
-	if total > 0 {
-		return fmt.Sprintf("%s (%.0f%%)", best.Label, best.Value/total*100)
+	name := best.Label
+	if format != nil {
+		name = format(name)
 	}
-	return best.Label
+	if total > 0 {
+		return fmt.Sprintf("%s %s", name, ui.Dim.Render(fmt.Sprintf("(%.0f%%)", best.Value/total*100)))
+	}
+	return name
 }
 
 func isoDate(s string) string {
