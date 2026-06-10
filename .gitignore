@@ -1,0 +1,4 @@
+/spoo
+/dist/
+*.test
+coverage.out
