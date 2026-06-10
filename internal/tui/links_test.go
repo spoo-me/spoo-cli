@@ -194,3 +194,63 @@ func TestSearchModeEscCancels(t *testing.T) {
 		t.Fatalf("searching=%v search=%q, want cancelled empty", m.searching, m.opts.Search)
 	}
 }
+
+// enter opens the detail pane for the selected row; esc returns.
+func TestEnterOpensDetailAndEscCloses(t *testing.T) {
+	m := newLinksModelWithPage(t, "http://unused.invalid")
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(LinksModel)
+	if m.detail == nil || m.detail.Alias != "first" {
+		t.Fatalf("detail = %+v, want first", m.detail)
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = next.(LinksModel)
+	if m.detail != nil {
+		t.Fatal("esc did not close the detail pane")
+	}
+}
+
+// d-d inside the detail pane deletes the detailed item, and the
+// success message closes the pane.
+func TestDetailDeleteTargetsDetailItem(t *testing.T) {
+	var deleted string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			deleted = r.URL.Path
+		}
+		w.Write([]byte(`{"items":[],"page":1,"pageSize":20,"total":0,"hasNext":false}`))
+	}))
+	defer srv.Close()
+
+	m := newLinksModelWithPage(t, srv.URL)
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(LinksModel)
+
+	m, _ = pressKey(t, m, 'd') // arm
+	m, cmd := pressKey(t, m, 'd')
+	if cmd == nil {
+		t.Fatal("confirm produced no command")
+	}
+	msg := cmd()
+	if deleted != "/api/v1/urls/id-first" {
+		t.Fatalf("deleted %q, want id-first", deleted)
+	}
+	next, _ = m.Update(msg)
+	m = next.(LinksModel)
+	if m.detail != nil {
+		t.Fatal("detail pane still open after successful delete")
+	}
+}
+
+// the detail view renders the fields the table truncates
+func TestDetailViewShowsFullFields(t *testing.T) {
+	m := newLinksModelWithPage(t, "http://unused.invalid")
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(LinksModel)
+	view := m.View().Content
+	for _, want := range []string{"https://a.com", "short url", "password", "clicks"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("detail view missing %q:\n%s", want, view)
+		}
+	}
+}

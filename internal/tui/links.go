@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	lipgloss "charm.land/lipgloss/v2"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/ui"
@@ -44,6 +46,7 @@ type LinksModel struct {
 	tbl       table.Model
 	searchBox textinput.Model
 	searching bool
+	detail    *api.URLItem // non-nil while the detail pane is open
 	page      *api.URLPage
 	pageNo    int
 	status    string // transient status-bar message
@@ -152,13 +155,18 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.status = ui.OK.Render("✓ " + msg.note)
+		m.detail = nil // the list refetches; the pane may show a deleted item
 		return m, m.fetch(m.pageNo)
 
 	case tea.KeyPressMsg:
-		if m.searching {
+		switch {
+		case m.searching:
 			return m.updateSearch(msg)
+		case m.detail != nil:
+			return m.updateDetail(msg)
+		default:
+			return m.updateBrowse(msg)
 		}
-		return m.updateBrowse(msg)
 	}
 
 	var cmd tea.Cmd
@@ -223,22 +231,20 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.fetch(m.pageNo - 1)
 		}
 		return m, nil
+	case "enter":
+		if it := m.selected(); it != nil {
+			m.detail = it
+			m.status = ""
+		}
+		return m, nil
 	case "o":
 		if it := m.selected(); it != nil {
-			if err := m.openBrowser(m.shortURL(it)); err != nil {
-				m.status = ui.Err.Render("✗ " + err.Error())
-			} else {
-				m.status = ui.Dim.Render("opened " + m.shortURL(it))
-			}
+			m.status = m.openStatus(it)
 		}
 		return m, nil
 	case "c":
 		if it := m.selected(); it != nil {
-			if err := m.copyText(m.shortURL(it)); err != nil {
-				m.status = ui.Err.Render("✗ " + err.Error())
-			} else {
-				m.status = ui.OK.Render("✓ copied " + m.shortURL(it))
-			}
+			m.status = m.copyStatus(it)
 		}
 		return m, nil
 	case "t":
@@ -247,22 +253,66 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "d":
-		it := m.selected()
-		if it == nil {
-			return m, nil
-		}
-		if m.pending == it.ID {
-			m.pending = ""
-			return m, m.deleteURL(it)
-		}
-		m.pending = it.ID
-		m.status = ui.Err.Render("delete "+it.Alias+"?") + ui.Dim.Render(" press d again to confirm")
-		return m, nil
+		return m.armOrConfirmDelete(m.selected())
 	}
 
 	var cmd tea.Cmd
 	m.tbl, cmd = m.tbl.Update(msg)
 	return m, cmd
+}
+
+// updateDetail handles keys while the detail pane is open; actions
+// target the detailed item, esc/enter/backspace return to the list.
+func (m LinksModel) updateDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	if m.pending != "" && key != "d" {
+		m.pending = ""
+		m.status = ""
+	}
+	switch key {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc", "q", "enter", "backspace":
+		m.detail = nil
+		m.status = ""
+		return m, nil
+	case "o":
+		m.status = m.openStatus(m.detail)
+	case "c":
+		m.status = m.copyStatus(m.detail)
+	case "t":
+		return m, m.toggleStatus(m.detail)
+	case "d":
+		return m.armOrConfirmDelete(m.detail)
+	}
+	return m, nil
+}
+
+func (m LinksModel) armOrConfirmDelete(it *api.URLItem) (tea.Model, tea.Cmd) {
+	if it == nil {
+		return m, nil
+	}
+	if m.pending == it.ID {
+		m.pending = ""
+		return m, m.deleteURL(it)
+	}
+	m.pending = it.ID
+	m.status = ui.Err.Render("delete "+it.Alias+"?") + ui.Dim.Render(" press d again to confirm")
+	return m, nil
+}
+
+func (m LinksModel) openStatus(it *api.URLItem) string {
+	if err := m.openBrowser(m.shortURL(it)); err != nil {
+		return ui.Err.Render("✗ " + err.Error())
+	}
+	return ui.Dim.Render("opened " + m.shortURL(it))
+}
+
+func (m LinksModel) copyStatus(it *api.URLItem) string {
+	if err := m.copyText(m.shortURL(it)); err != nil {
+		return ui.Err.Render("✗ " + err.Error())
+	}
+	return ui.OK.Render("✓ copied " + m.shortURL(it))
 }
 
 func nextSortField(current string) string {
@@ -299,10 +349,7 @@ func (m LinksModel) deleteURL(it *api.URLItem) tea.Cmd {
 func (m LinksModel) rows() []table.Row {
 	rows := make([]table.Row, 0, len(m.page.Items))
 	for _, it := range m.page.Items {
-		created := it.CreatedAt
-		if len(created) >= 10 {
-			created = created[:10]
-		}
+		created := isoDate(it.CreatedAt)
 		rows = append(rows, table.Row{
 			it.Alias,
 			it.LongURL,
@@ -331,6 +378,8 @@ func (m LinksModel) View() tea.View {
 	b.WriteString(title + "\n\n")
 
 	switch {
+	case m.detail != nil:
+		b.WriteString(m.detailView() + "\n")
 	case m.loading && m.page == nil:
 		b.WriteString(ui.Dim.Render("loading…") + "\n")
 	case m.page != nil && len(m.page.Items) == 0:
@@ -343,16 +392,78 @@ func (m LinksModel) View() tea.View {
 	case m.searching:
 		b.WriteString(ui.Title.Render("/") + m.searchBox.View() + "\n")
 		b.WriteString(ui.KeyHint.Render("enter apply · esc cancel"))
+	case m.detail != nil:
+		if m.status != "" {
+			b.WriteString(m.status + "\n")
+		}
+		b.WriteString(ui.KeyHint.Render("o open · c copy · t toggle · d delete · esc back"))
 	default:
 		if m.status != "" {
 			b.WriteString(m.status + "\n")
 		}
-		b.WriteString(ui.KeyHint.Render("↑/↓ move · ←/→ pages · / search · s sort · o open · c copy · t toggle · d delete · r refresh · q quit"))
+		b.WriteString(ui.KeyHint.Render("↑/↓ move · ←/→ pages · enter details · / search · s sort · o open · c copy · t toggle · d delete · r refresh · q quit"))
 	}
 
 	v := tea.NewView(b.String())
 	v.AltScreen = true
 	return v
+}
+
+func (m LinksModel) detailView() string {
+	it := m.detail
+	label := func(s string) string { return ui.Dim.Render(fmt.Sprintf("%-14s", s)) }
+	yesNo := func(b bool) string {
+		if b {
+			return "yes"
+		}
+		return "no"
+	}
+	statusLine := ui.OK.Render(it.Status)
+	if it.Status != "ACTIVE" {
+		statusLine = ui.Err.Render(it.Status)
+	}
+	// wrap the destination so very long URLs stay inside the box
+	wrapW := max(30, m.width-24)
+	dest := lipgloss.NewStyle().Width(wrapW).Render(it.LongURL)
+
+	lines := []string{
+		ui.Title.Render(it.Alias) + "  " + statusLine,
+		"",
+		label("short url") + m.shortURL(it),
+		label("destination") + strings.TrimRight(strings.ReplaceAll(dest, "\n", "\n"+strings.Repeat(" ", 14)), " "),
+		"",
+		label("clicks") + strconv.Itoa(it.TotalClicks),
+		label("created") + isoDate(it.CreatedAt),
+		label("last click") + orNever(isoDate(it.LastClick)),
+		"",
+		label("password") + yesNo(it.PasswordSet),
+		label("private stats") + yesNo(it.PrivateStats),
+		label("block bots") + yesNo(it.BlockBots),
+	}
+	if it.MaxClicks != nil {
+		lines = append(lines, label("max clicks")+strconv.Itoa(*it.MaxClicks))
+	}
+	if it.ExpireAfter != nil {
+		lines = append(lines, label("expires")+time.Unix(*it.ExpireAfter, 0).UTC().Format("2006-01-02 15:04 MST"))
+	}
+	if it.Domain != "" {
+		lines = append(lines, label("domain")+it.Domain)
+	}
+	return ui.Box.Render(strings.Join(lines, "\n"))
+}
+
+func isoDate(s string) string {
+	if len(s) >= 10 {
+		return s[:10]
+	}
+	return s
+}
+
+func orNever(s string) string {
+	if s == "" {
+		return "never"
+	}
+	return s
 }
 
 // Err reports a fetch error that ended the session, if any.
