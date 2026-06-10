@@ -26,7 +26,7 @@ var SparkRunes = []rune("▁▂▃▄▅▆▇█")
 // which has no flag.
 func CountryLabel(code string) string {
 	if code == "XX" {
-		return "unknown"
+		return "Unknown" // match the backend's casing for unknown cities
 	}
 	if len(code) != 2 || code[0] < 'A' || code[0] > 'Z' || code[1] < 'A' || code[1] > 'Z' {
 		return code

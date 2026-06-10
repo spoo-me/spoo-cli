@@ -6,7 +6,7 @@ func TestCountryLabel(t *testing.T) {
 	cases := map[string]string{
 		"IN":    "🇮🇳 IN",
 		"US":    "🇺🇸 US",
-		"XX":    "unknown", // backend's no-geo marker
+		"XX":    "Unknown", // backend's no-geo marker, cased like unknown cities
 		"India": "India",   // not an alpha-2 code: pass through
 		"in":    "in",      // lowercase: pass through
 		"":      "",

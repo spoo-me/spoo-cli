@@ -66,9 +66,10 @@ func TestDashboardRendersAllSections(t *testing.T) {
 	m := newStatsModel(t, "http://unused.invalid")
 	view := m.View().Content
 	for _, want := range []string{
-		"spoo stats", "100 clicks", "40 unique", "avg redirect 88ms",
-		"Browsers", "Operating systems", "Countries", "Cities", "Referrers",
+		"spoo stats", "✦ overview", "clicks", "unique", "avg redirect", "88ms",
+		"✦ browsers", "✦ operating systems", "✦ countries", "✦ cities", "✦ referrers",
 		"Chrome", "🇮🇳 IN", "Pune", "twitter.com", "2026-03-12",
+		"70%", // percentage column: Chrome 70 of 100 clicks
 	} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("dashboard missing %q", want)
