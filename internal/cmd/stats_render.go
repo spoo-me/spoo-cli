@@ -103,11 +103,11 @@ func renderStats(res *api.StatsResponse, target string) string {
 		ui.OK.Render(fmt.Sprintf("%d clicks", res.Summary.TotalClicks)),
 		ui.Dim.Render(fmt.Sprintf("%d unique", res.Summary.UniqueClicks)),
 		firstLast(res.Summary),
-		ui.Dim.Render(fmt.Sprintf("avg redirect %.0fms", res.Summary.AvgRedirectionTime*1000)),
+		ui.Dim.Render(fmt.Sprintf("avg redirect %.0fms", res.Summary.AvgRedirectionTime)),
 	)
 	sections = append(sections, ui.Box.Render(summary))
 
-	if pts := extractPoints(res.Metrics["clicks_by_time"], "date", "clicks"); len(pts) > 0 {
+	if pts := extractPoints(res.Metrics["clicks_by_time"], "time", "clicks"); len(pts) > 0 {
 		sections = append(sections, renderSparkline(pts))
 	}
 	total := float64(res.Summary.TotalClicks)

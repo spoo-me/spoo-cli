@@ -83,10 +83,26 @@ func (c *Client) ListURLs(ctx context.Context, opts ListURLsOptions) (*URLPage, 
 	return &out, nil
 }
 
+// UpdatedURL mirrors UpdateUrlResponse — unlike the shorten response it
+// carries no short_url, and timestamps are Unix seconds.
+type UpdatedURL struct {
+	ID           string `json:"id"`
+	Alias        string `json:"alias"`
+	LongURL      string `json:"long_url"`
+	Status       string `json:"status"`
+	PasswordSet  bool   `json:"password_set"`
+	MaxClicks    *int   `json:"max_clicks"`
+	ExpireAfter  *int64 `json:"expire_after"`
+	BlockBots    bool   `json:"block_bots"`
+	PrivateStats bool   `json:"private_stats"`
+	Domain       string `json:"domain"`
+	UpdatedAt    int64  `json:"updated_at"`
+}
+
 // UpdateURL patches the given fields (snake_case keys per the API:
 // long_url, alias, password, max_clicks, expire_after, status, ...).
-func (c *Client) UpdateURL(ctx context.Context, id string, fields map[string]any) (*ShortURL, error) {
-	var out ShortURL
+func (c *Client) UpdateURL(ctx context.Context, id string, fields map[string]any) (*UpdatedURL, error) {
+	var out UpdatedURL
 	if err := c.do(ctx, http.MethodPatch, "/api/v1/urls/"+id, nil, fields, &out); err != nil {
 		return nil, err
 	}

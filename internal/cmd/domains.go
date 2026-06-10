@@ -122,7 +122,7 @@ func newDomainsVerifyCmd() *cobra.Command {
 				return err
 			}
 			out := prettyOut(cmd)
-			if verified.Status == "ACTIVE" {
+			if strings.EqualFold(verified.Status, "ACTIVE") {
 				fmt.Fprintln(out, ui.OK.Render("✓ "+verified.FQDN+" is active"))
 				return nil
 			}

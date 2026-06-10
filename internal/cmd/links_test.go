@@ -79,7 +79,7 @@ func TestLinksUpdateStatus(t *testing.T) {
 		if body["status"] != "INACTIVE" {
 			t.Errorf("body = %v", body)
 		}
-		w.Write([]byte(`{"id":"a1","short_url":"https://spoo.me/x","alias":"x","status":"INACTIVE"}`))
+		w.Write([]byte(`{"id":"a1","alias":"x","status":"INACTIVE","password_set":false,"updated_at":1781524800}`))
 	}))
 	defer srv.Close()
 	pointDepsAt(t, srv.URL)

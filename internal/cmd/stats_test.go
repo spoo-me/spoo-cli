@@ -23,8 +23,8 @@ const statsBody = `{
 			{"browser": "Firefox", "clicks": 30.0}
 		],
 		"clicks_by_time": [
-			{"date": "2026-05-01", "clicks": 40.0},
-			{"date": "2026-05-02", "clicks": 60.0}
+			{"time": "2026-05-01", "clicks": 40.0},
+			{"time": "2026-05-02", "clicks": 60.0}
 		]
 	}
 }`

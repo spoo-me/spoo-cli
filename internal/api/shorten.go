@@ -17,14 +17,14 @@ type ShortenRequest struct {
 	Domain       string `json:"domain,omitempty"`
 }
 
+// ShortURL mirrors UrlResponse (POST /api/v1/shorten); created_at is
+// Unix seconds in this response.
 type ShortURL struct {
-	ID        string `json:"id"`
 	ShortURL  string `json:"short_url"`
 	Alias     string `json:"alias"`
 	LongURL   string `json:"long_url"`
-	CreatedAt string `json:"created_at"`
+	CreatedAt int64  `json:"created_at"`
 	Status    string `json:"status"`
-	Domain    string `json:"domain"`
 }
 
 func (c *Client) Shorten(ctx context.Context, req ShortenRequest) (*ShortURL, error) {

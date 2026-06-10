@@ -155,8 +155,14 @@ func newLinksUpdateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			asJSON, _ := cmd.Flags().GetBool("json")
-			return printShortURL(cmd, res, asJSON)
+			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(res)
+			}
+			fmt.Fprintln(prettyOut(cmd), ui.OK.Render("✓ updated ")+res.Alias+
+				ui.Dim.Render(" ("+res.Status+")"))
+			return nil
 		},
 	}
 	cmd.Flags().StringVar(&longURL, "long-url", "", "new destination URL")

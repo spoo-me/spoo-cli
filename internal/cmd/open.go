@@ -57,7 +57,7 @@ func newInspectCmd() *cobra.Command {
 				return fmt.Errorf("%s does not exist", res.ShortURL)
 			case res.Status == http.StatusGone:
 				return fmt.Errorf("%s has expired", res.ShortURL)
-			case res.Status == http.StatusForbidden:
+			case res.Status == http.StatusUnauthorized || res.Status == http.StatusForbidden:
 				return fmt.Errorf("%s is password-protected or blocked", res.ShortURL)
 			default:
 				return fmt.Errorf("%s responded with HTTP %d", res.ShortURL, res.Status)

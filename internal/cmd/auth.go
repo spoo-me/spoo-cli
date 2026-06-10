@@ -89,13 +89,18 @@ func loginWithToken(cmd *cobra.Command, d *deps) error {
 	if !strings.HasPrefix(token, "spoo_") {
 		return fmt.Errorf("that doesn't look like a spoo API key (expected spoo_ prefix)")
 	}
+	// validate before saving so a bad key can't clobber an existing session
+	prev, _ := d.store.Load()
 	if err := d.store.Save(auth.Credentials{Mode: auth.ModeAPIKey, APIKey: token}); err != nil {
 		return err
 	}
-	// validate immediately so a bad key fails loudly now, not later
 	user, err := d.client.Me(cmd.Context())
 	if err != nil {
-		_ = d.store.Clear()
+		if prev != nil {
+			_ = d.store.Save(*prev)
+		} else {
+			_ = d.store.Clear()
+		}
 		return fmt.Errorf("API key rejected: %w", err)
 	}
 	fmt.Fprintln(prettyOut(cmd), ui.OK.Render("✓ Logged in as ")+ui.Title.Render(user.Email))

@@ -47,7 +47,7 @@ func TestUpdateURLSendsPatch(t *testing.T) {
 		if body["status"] != "INACTIVE" {
 			t.Errorf("unexpected body: %v", body)
 		}
-		w.Write([]byte(`{"id":"abc123","short_url":"https://spoo.me/x","alias":"x","status":"INACTIVE"}`))
+		w.Write([]byte(`{"id":"abc123","alias":"x","status":"INACTIVE","password_set":false,"updated_at":1781524800}`))
 	}))
 	defer srv.Close()
 

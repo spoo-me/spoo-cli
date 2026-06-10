@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"strconv"
 	"testing"
 	"time"
 )
@@ -19,9 +18,20 @@ func TestParseExpiryDuration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := strconv.FormatInt(now.Add(72*time.Hour).Unix(), 10)
-	if got != want {
-		t.Fatalf("got %q, want %q", got, want)
+	if got != "2026-06-13T12:00:00Z" {
+		t.Fatalf("got %q, want 2026-06-13T12:00:00Z", got)
+	}
+}
+
+// Bare epoch input is normalized to RFC 3339: the backend only parses
+// epoch when it arrives as a JSON number, and we send a string field.
+func TestParseExpiryEpochString(t *testing.T) {
+	got, err := parseExpiry("1781524800", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "2026-06-15T12:00:00Z" {
+		t.Fatalf("got %q, want 2026-06-15T12:00:00Z", got)
 	}
 }
 
