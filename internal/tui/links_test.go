@@ -195,24 +195,42 @@ func TestSearchModeEscCancels(t *testing.T) {
 	}
 }
 
-// enter opens the detail pane for the selected row; esc returns.
+// enter opens the detail pane for the selected row; esc returns to the
+// list without quitting.
 func TestEnterOpensDetailAndEscCloses(t *testing.T) {
 	m := newLinksModelWithPage(t, "http://unused.invalid")
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(LinksModel)
-	if m.detail == nil || m.detail.Alias != "first" {
-		t.Fatalf("detail = %+v, want first", m.detail)
+	if !m.showDetail {
+		t.Fatal("enter did not open the detail pane")
 	}
-	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	m = next.(LinksModel)
-	if m.detail != nil {
+	if m.showDetail {
 		t.Fatal("esc did not close the detail pane")
+	}
+	if cmd != nil {
+		t.Fatal("esc with detail open must not quit")
 	}
 }
 
-// d-d inside the detail pane deletes the detailed item, and the
-// success message closes the pane.
-func TestDetailDeleteTargetsDetailItem(t *testing.T) {
+// the pane mirrors the selection: moving the cursor changes the detail.
+func TestDetailFollowsSelection(t *testing.T) {
+	m := newLinksModelWithPage(t, "http://unused.invalid")
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(LinksModel)
+	m, _ = pressKey(t, m, 'j') // move down while the pane is open
+	if got := m.selected().Alias; got != "second" {
+		t.Fatalf("selected = %q, want second", got)
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "https://b.com") {
+		t.Fatalf("detail did not follow selection:\n%s", view)
+	}
+}
+
+// d-d with the pane open deletes the selected item.
+func TestDetailDeleteTargetsSelectedItem(t *testing.T) {
 	var deleted string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
@@ -227,18 +245,36 @@ func TestDetailDeleteTargetsDetailItem(t *testing.T) {
 	m = next.(LinksModel)
 
 	m, _ = pressKey(t, m, 'd') // arm
-	m, cmd := pressKey(t, m, 'd')
+	_, cmd := pressKey(t, m, 'd')
 	if cmd == nil {
 		t.Fatal("confirm produced no command")
 	}
-	msg := cmd()
+	cmd()
 	if deleted != "/api/v1/urls/id-first" {
 		t.Fatalf("deleted %q, want id-first", deleted)
 	}
-	next, _ = m.Update(msg)
+}
+
+// wide terminals get the side-by-side layout; narrow ones full screen.
+func TestSplitLayoutIsResponsive(t *testing.T) {
+	m := newLinksModelWithPage(t, "http://unused.invalid")
+	next, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
 	m = next.(LinksModel)
-	if m.detail != nil {
-		t.Fatal("detail pane still open after successful delete")
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = next.(LinksModel)
+	if !m.splitActive() {
+		t.Fatal("140 cols with detail open should use the split layout")
+	}
+	view := m.View().Content
+	// in the split, the table (alias column) and detail coexist
+	if !strings.Contains(view, "second") || !strings.Contains(view, "destination") {
+		t.Fatalf("split view missing table or detail:\n%s", view)
+	}
+
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	m = next.(LinksModel)
+	if m.splitActive() {
+		t.Fatal("80 cols must fall back to the full-screen pane")
 	}
 }
 

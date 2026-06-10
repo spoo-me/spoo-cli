@@ -17,7 +17,12 @@ import (
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
-const defaultPageSize = 20
+const (
+	defaultPageSize = 20
+	// splitMinWidth is the narrowest terminal that fits the side-by-side
+	// master-detail layout; below it the detail pane goes full screen.
+	splitMinWidth = 100
+)
 
 // sortFields is the cycle order for the 's' key.
 var sortFields = []string{"total_clicks", "created_at", "last_click"}
@@ -33,8 +38,8 @@ type actionMsg struct {
 }
 
 // LinksModel is the interactive link browser: a paginated table over
-// GET /api/v1/urls with open/copy/toggle/delete actions, plus live
-// search (/) and sort cycling (s).
+// GET /api/v1/urls with open/copy/toggle/delete actions, live search
+// (/), sort cycling (s), and a master-detail pane (enter).
 type LinksModel struct {
 	client      *api.Client
 	apiBase     string
@@ -43,18 +48,18 @@ type LinksModel struct {
 
 	opts api.ListURLsOptions // current query: search, sort, status, page size
 
-	tbl       table.Model
-	searchBox textinput.Model
-	searching bool
-	detail    *api.URLItem // non-nil while the detail pane is open
-	page      *api.URLPage
-	pageNo    int
-	status    string // transient status-bar message
-	pending   string // url id awaiting delete confirmation
-	loading   bool
-	err       error
-	width     int
-	height    int
+	tbl        table.Model
+	searchBox  textinput.Model
+	searching  bool
+	showDetail bool // detail pane open; it always reflects the selected row
+	page       *api.URLPage
+	pageNo     int
+	status     string // transient status-bar message
+	pending    string // url id awaiting delete confirmation
+	loading    bool
+	err        error
+	width      int
+	height     int
 }
 
 func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, openBrowser, copyText func(string) error) LinksModel {
@@ -97,6 +102,31 @@ func linkColumns(width int) []table.Column {
 	}
 }
 
+// splitActive reports whether the side-by-side layout is in effect.
+func (m LinksModel) splitActive() bool {
+	return m.showDetail && m.width >= splitMinWidth
+}
+
+// splitWidths returns the table and detail-pane widths for the split layout.
+func (m LinksModel) splitWidths() (tableW, detailW int) {
+	tableW = m.width * 11 / 20 // ~55% list, ~45% detail
+	detailW = m.width - tableW - 2
+	return tableW, detailW
+}
+
+// relayout resizes the table for the current width and detail state.
+func (m *LinksModel) relayout() {
+	tw := m.width
+	if m.splitActive() {
+		tw, _ = m.splitWidths()
+	}
+	m.tbl.SetColumns(linkColumns(tw))
+	m.tbl.SetWidth(tw)
+	if m.height > 0 {
+		m.tbl.SetHeight(max(5, m.height-6))
+	}
+}
+
 func (m LinksModel) Init() tea.Cmd { return m.fetch(m.pageNo) }
 
 func (m LinksModel) fetch(pageNo int) tea.Cmd {
@@ -131,9 +161,7 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.tbl.SetColumns(linkColumns(msg.Width))
-		m.tbl.SetWidth(msg.Width)
-		m.tbl.SetHeight(max(5, msg.Height-6))
+		m.relayout()
 		return m, nil
 
 	case pageMsg:
@@ -155,18 +183,13 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.status = ui.OK.Render("✓ " + msg.note)
-		m.detail = nil // the list refetches; the pane may show a deleted item
 		return m, m.fetch(m.pageNo)
 
 	case tea.KeyPressMsg:
-		switch {
-		case m.searching:
+		if m.searching {
 			return m.updateSearch(msg)
-		case m.detail != nil:
-			return m.updateDetail(msg)
-		default:
-			return m.updateBrowse(msg)
 		}
+		return m.updateBrowse(msg)
 	}
 
 	var cmd tea.Cmd
@@ -194,7 +217,8 @@ func (m LinksModel) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// updateBrowse handles keys in normal browsing mode.
+// updateBrowse handles keys in browse mode. The detail pane mirrors the
+// selection, so navigation stays live while it is open.
 func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	// any key other than a second 'd' cancels a pending delete
@@ -206,8 +230,25 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// its default keymap also binds some of them (e.g. 'd' is half
 	// page down, which would move the cursor mid-confirmation)
 	switch key {
-	case "q", "esc", "ctrl+c":
+	case "ctrl+c":
 		return m, tea.Quit
+	case "q":
+		return m, tea.Quit
+	case "esc", "backspace":
+		if m.showDetail {
+			m.showDetail = false
+			m.relayout()
+			return m, nil
+		}
+		return m, tea.Quit
+	case "enter":
+		if m.showDetail {
+			m.showDetail = false
+		} else if m.selected() != nil {
+			m.showDetail = true
+		}
+		m.relayout()
+		return m, nil
 	case "r":
 		m.loading = true
 		return m, m.fetch(m.pageNo)
@@ -229,12 +270,6 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.pageNo > 1 {
 			m.loading = true
 			return m, m.fetch(m.pageNo - 1)
-		}
-		return m, nil
-	case "enter":
-		if it := m.selected(); it != nil {
-			m.detail = it
-			m.status = ""
 		}
 		return m, nil
 	case "o":
@@ -259,33 +294,6 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.tbl, cmd = m.tbl.Update(msg)
 	return m, cmd
-}
-
-// updateDetail handles keys while the detail pane is open; actions
-// target the detailed item, esc/enter/backspace return to the list.
-func (m LinksModel) updateDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
-	if m.pending != "" && key != "d" {
-		m.pending = ""
-		m.status = ""
-	}
-	switch key {
-	case "ctrl+c":
-		return m, tea.Quit
-	case "esc", "q", "enter", "backspace":
-		m.detail = nil
-		m.status = ""
-		return m, nil
-	case "o":
-		m.status = m.openStatus(m.detail)
-	case "c":
-		m.status = m.copyStatus(m.detail)
-	case "t":
-		return m, m.toggleStatus(m.detail)
-	case "d":
-		return m.armOrConfirmDelete(m.detail)
-	}
-	return m, nil
 }
 
 func (m LinksModel) armOrConfirmDelete(it *api.URLItem) (tea.Model, tea.Cmd) {
@@ -349,13 +357,12 @@ func (m LinksModel) deleteURL(it *api.URLItem) tea.Cmd {
 func (m LinksModel) rows() []table.Row {
 	rows := make([]table.Row, 0, len(m.page.Items))
 	for _, it := range m.page.Items {
-		created := isoDate(it.CreatedAt)
 		rows = append(rows, table.Row{
 			it.Alias,
 			it.LongURL,
 			strconv.Itoa(it.TotalClicks),
 			it.Status,
-			created,
+			isoDate(it.CreatedAt),
 		})
 	}
 	return rows
@@ -378,12 +385,16 @@ func (m LinksModel) View() tea.View {
 	b.WriteString(title + "\n\n")
 
 	switch {
-	case m.detail != nil:
-		b.WriteString(m.detailView() + "\n")
 	case m.loading && m.page == nil:
 		b.WriteString(ui.Dim.Render("loading…") + "\n")
 	case m.page != nil && len(m.page.Items) == 0:
 		b.WriteString(ui.Dim.Render("no links match — create one with `spoo shorten`") + "\n")
+	case m.splitActive():
+		_, dw := m.splitWidths()
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top,
+			m.tbl.View(), "  ", m.detailView(dw)) + "\n")
+	case m.showDetail:
+		b.WriteString(m.detailView(m.width-4) + "\n")
 	default:
 		b.WriteString(m.tbl.View() + "\n")
 	}
@@ -392,16 +403,15 @@ func (m LinksModel) View() tea.View {
 	case m.searching:
 		b.WriteString(ui.Title.Render("/") + m.searchBox.View() + "\n")
 		b.WriteString(ui.KeyHint.Render("enter apply · esc cancel"))
-	case m.detail != nil:
-		if m.status != "" {
-			b.WriteString(m.status + "\n")
-		}
-		b.WriteString(ui.KeyHint.Render("o open · c copy · t toggle · d delete · esc back"))
 	default:
 		if m.status != "" {
 			b.WriteString(m.status + "\n")
 		}
-		b.WriteString(ui.KeyHint.Render("↑/↓ move · ←/→ pages · enter details · / search · s sort · o open · c copy · t toggle · d delete · r refresh · q quit"))
+		hint := "↑/↓ move · ←/→ pages · enter details · / search · s sort · o open · c copy · t toggle · d delete · r refresh · q quit"
+		if m.showDetail {
+			hint = "↑/↓ move · enter/esc close · o open · c copy · t toggle · d delete · q quit"
+		}
+		b.WriteString(ui.KeyHint.Render(hint))
 	}
 
 	v := tea.NewView(b.String())
@@ -409,8 +419,13 @@ func (m LinksModel) View() tea.View {
 	return v
 }
 
-func (m LinksModel) detailView() string {
-	it := m.detail
+// detailView renders the selected link's full record at the given width.
+func (m LinksModel) detailView(width int) string {
+	it := m.selected()
+	box := ui.Box.Width(max(40, width))
+	if it == nil {
+		return box.Render(ui.Dim.Render("nothing selected"))
+	}
 	label := func(s string) string { return ui.Dim.Render(fmt.Sprintf("%-14s", s)) }
 	yesNo := func(b bool) string {
 		if b {
@@ -422,15 +437,17 @@ func (m LinksModel) detailView() string {
 	if it.Status != "ACTIVE" {
 		statusLine = ui.Err.Render(it.Status)
 	}
-	// wrap the destination so very long URLs stay inside the box
-	wrapW := max(30, m.width-24)
-	dest := lipgloss.NewStyle().Width(wrapW).Render(it.LongURL)
+	// wrap long URLs so they stay inside the box, aligned past the label
+	wrap := lipgloss.NewStyle().Width(max(24, width-20))
+	field := func(name, value string) string {
+		return lipgloss.JoinHorizontal(lipgloss.Top, label(name), wrap.Render(value))
+	}
 
 	lines := []string{
 		ui.Title.Render(it.Alias) + "  " + statusLine,
 		"",
-		label("short url") + m.shortURL(it),
-		label("destination") + strings.TrimRight(strings.ReplaceAll(dest, "\n", "\n"+strings.Repeat(" ", 14)), " "),
+		field("short url", m.shortURL(it)),
+		field("destination", it.LongURL),
 		"",
 		label("clicks") + strconv.Itoa(it.TotalClicks),
 		label("created") + isoDate(it.CreatedAt),
@@ -449,7 +466,7 @@ func (m LinksModel) detailView() string {
 	if it.Domain != "" {
 		lines = append(lines, label("domain")+it.Domain)
 	}
-	return ui.Box.Render(strings.Join(lines, "\n"))
+	return box.Render(strings.Join(lines, "\n"))
 }
 
 func isoDate(s string) string {
