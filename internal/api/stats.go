@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 )
 
@@ -14,6 +16,9 @@ type StatsQuery struct {
 	EndDate   string
 	GroupBy   []string // time, browser, os, country, city, referrer, short_code
 	Timezone  string   // IANA name
+	// Filters narrows results server-side; keys are the filterable
+	// dimensions (browser, os, country, city, referrer, short_code).
+	Filters map[string][]string
 }
 
 func (q StatsQuery) values() url.Values {
@@ -35,6 +40,11 @@ func (q StatsQuery) values() url.Values {
 	}
 	if q.Timezone != "" {
 		v.Set("timezone", q.Timezone)
+	}
+	for _, dim := range slices.Sorted(maps.Keys(q.Filters)) {
+		if vals := q.Filters[dim]; len(vals) > 0 {
+			v.Set(dim, strings.Join(vals, ","))
+		}
 	}
 	return v
 }
