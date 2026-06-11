@@ -133,8 +133,20 @@ func (e exportModal) handle(msg tea.Msg) (exportModal, *exportRequest, tea.Cmd) 
 	return e, nil, tea.Batch(nameCmd, pickerCmd)
 }
 
-// view renders the modal centered in the given screen box.
-func (e exportModal) view(width, height int) string {
+// overlayCenter composites fg over bg, centered, without losing the
+// background — the dialog floats on the live view.
+func overlayCenter(bg, fg string, width, height int) string {
+	return lipgloss.NewCompositor(
+		lipgloss.NewLayer(bg),
+		lipgloss.NewLayer(fg).
+			X(max(0, (width-lipgloss.Width(fg))/2)).
+			Y(max(0, (height-lipgloss.Height(fg))/2)).
+			Z(1),
+	).Render()
+}
+
+// view renders the dialog box itself; hosts overlay it via overlayCenter.
+func (e exportModal) view(width int) string {
 	label := func(s string, active bool) string {
 		if active {
 			return ui.Title.Render(s)
@@ -160,13 +172,12 @@ func (e exportModal) view(width, height int) string {
 		lines = append(lines, ui.KeyHint.Render("extension picks the format · tab choose folder · enter export · esc cancel"))
 	}
 
-	box := lipgloss.NewStyle().
+	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(ui.Accent).
 		Padding(0, 2).
 		Width(min(64, max(40, width-8))).
 		Render(strings.Join(lines, "\n"))
-	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box)
 }
 
 // collapseHome shortens a path for display (~/… instead of /Users/…).

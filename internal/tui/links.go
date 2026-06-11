@@ -501,12 +501,6 @@ func (m LinksModel) rows() []table.Row {
 }
 
 func (m LinksModel) View() tea.View {
-	if m.exportBox.open {
-		v := tea.NewView(m.exportBox.view(max(60, m.width), max(20, m.height)))
-		v.AltScreen = true
-		return v
-	}
-
 	var b strings.Builder
 
 	title := ui.Title.Render("spoo links")
@@ -548,7 +542,11 @@ func (m LinksModel) View() tea.View {
 		b.WriteString(m.helper.View(linksKeys{}))
 	}
 
-	v := tea.NewView(b.String())
+	content := b.String()
+	if m.exportBox.open {
+		content = overlayCenter(content, m.exportBox.view(max(60, m.width)), max(60, m.width), max(20, m.height))
+	}
+	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
 }

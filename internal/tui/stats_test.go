@@ -345,8 +345,12 @@ func TestExportModal(t *testing.T) {
 	if !m.exportBox.open {
 		t.Fatal("e should open the export dialog")
 	}
-	if !strings.Contains(m.View().Content, "export analytics") {
+	view := m.View().Content
+	if !strings.Contains(view, "export analytics") {
 		t.Fatal("export dialog not rendered")
+	}
+	if !strings.Contains(view, "overview") {
+		t.Fatal("the dashboard should stay visible behind the dialog")
 	}
 	name := m.exportBox.name.Value()
 	if !strings.HasPrefix(name, "spoo-stats-all-") || !strings.HasSuffix(name, ".xlsx") {

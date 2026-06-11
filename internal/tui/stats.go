@@ -640,12 +640,6 @@ func (m StatsModel) chartHeight() int {
 }
 
 func (m StatsModel) View() tea.View {
-	if m.exportBox.open {
-		v := tea.NewView(m.exportBox.view(m.width, m.height))
-		v.AltScreen = true
-		return v
-	}
-
 	var b strings.Builder
 	b.WriteString(m.headerLine() + "\n")
 	if line := m.filterLine(); line != "" {
@@ -662,7 +656,7 @@ func (m StatsModel) View() tea.View {
 	default:
 		chartH := m.chartHeight()
 		overviewW := m.overviewWidth()
-		chartBoxW := m.width - overviewW
+		chartBoxW := m.width - overviewW - 1
 		chartFocused := m.focus == 0
 		title, chartBody := m.chartTitle(), ""
 		if m.tableOn["time"] {
@@ -674,6 +668,7 @@ func (m StatsModel) View() tea.View {
 		}
 		top := lipgloss.JoinHorizontal(lipgloss.Top,
 			m.boxed("overview", m.overviewBody(), overviewW, chartH+4, false, ui.Accent),
+			" ",
 			m.boxed(title, chartBody, chartBoxW, chartH+4, chartFocused, m.metricHue()),
 		)
 		b.WriteString(top + "\n")
@@ -704,7 +699,11 @@ func (m StatsModel) View() tea.View {
 		b.WriteString(m.helper.View(statsDashKeys{}))
 	}
 
-	v := tea.NewView(b.String())
+	content := b.String()
+	if m.exportBox.open {
+		content = overlayCenter(content, m.exportBox.view(m.width), m.width, m.height)
+	}
+	v := tea.NewView(content)
 	v.AltScreen = true
 	return v
 }
@@ -969,19 +968,24 @@ func (m StatsModel) timeChart(width, height int) string {
 	return chart.View()
 }
 
-// panelGrid lays the breakdown panels out in responsive columns;
-// boxes sit border-to-border and the division remainder widens the
+// panelGrid lays the breakdown panels out in responsive columns. A
+// one-column gutter visually matches the stacked borders between rows
+// (terminal cells are ~2:1), and the division remainder widens the
 // leading panels so each row spans the full terminal width.
 func (m StatsModel) panelGrid() string {
 	cols := m.gridCols()
-	panelW := m.width / cols
-	rem := m.width - panelW*cols
+	usable := m.width - (cols - 1)
+	panelW := usable / cols
+	rem := usable - panelW*cols
 	contentRows := m.uniformRows()
 
 	var rows []string
 	for _, chunk := range m.panelChunks() {
-		row := make([]string, 0, cols)
+		row := make([]string, 0, cols*2)
 		for n, i := range chunk {
+			if len(row) > 0 {
+				row = append(row, " ")
+			}
 			w := panelW
 			if n < rem {
 				w++
