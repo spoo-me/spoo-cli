@@ -5,7 +5,33 @@ import (
 	"strings"
 
 	lipgloss "charm.land/lipgloss/v2"
+
+	"github.com/spoo-me/spoo-cli/internal/ui"
 )
+
+// hueShades are the focused-panel cuts of a panel's pastel hue: the
+// border whispers it (dim), the title shouts it (saturated). Picked in
+// the focus-style A/B over solid violet, thick/double borders, edge
+// accents, and saturated frames.
+type hueShades struct{ dim, bright color.Color }
+
+var hueShadesByPastel = map[color.Color]hueShades{
+	ui.Accent:  {lipgloss.Color("#5B4A8F"), lipgloss.Color("#8B5CF6")},
+	ui.Success: {lipgloss.Color("#1F6B50"), lipgloss.Color("#10B981")},
+	ui.Blue:    {lipgloss.Color("#2E6E8E"), lipgloss.Color("#0EA5E9")},
+	ui.Yellow:  {lipgloss.Color("#8C6D1F"), lipgloss.Color("#F59E0B")},
+	ui.Pink:    {lipgloss.Color("#8E3A66"), lipgloss.Color("#EC4899")},
+	ui.Teal:    {lipgloss.Color("#1F6B61"), lipgloss.Color("#14B8A6")},
+}
+
+// hueFor returns the focused-panel shades for a pastel, falling back
+// to the violet pair for hues outside the dashboard palette.
+func hueFor(pastel color.Color) hueShades {
+	if s, ok := hueShadesByPastel[pastel]; ok {
+		return s
+	}
+	return hueShadesByPastel[ui.Accent]
+}
 
 // entityColors maps well-known browsers, platforms, and referrers to
 // the colors people associate with them (pastel-shifted for dark

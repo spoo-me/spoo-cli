@@ -560,9 +560,9 @@ func (m StatsModel) View() tea.View {
 		legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
 		chartBody := legend + "\n" + m.timeChart(chartBoxW-4, chartH)
 		top := lipgloss.JoinHorizontal(lipgloss.Top,
-			m.boxed("overview", m.overviewBody(), overviewW, chartH+4, false),
+			m.boxed("overview", m.overviewBody(), overviewW, chartH+4, false, ui.Accent),
 			" ",
-			m.boxed(m.chartTitle(), chartBody, chartBoxW, chartH+4, false),
+			m.boxed(m.chartTitle(), chartBody, chartBoxW, chartH+4, false, m.metricHue()),
 		)
 		b.WriteString(top + "\n")
 		b.WriteString(m.panelGrid() + "\n")
@@ -635,11 +635,15 @@ func (m StatsModel) filterLine() string {
 }
 
 // boxed wraps content in the dashboard's standard bordered panel.
-// width/height are border-box totals (lipgloss v2 semantics).
-func (m StatsModel) boxed(title, body string, width, height int, focused bool) string {
-	borderColor, titleStyle := ui.Muted, ui.Dim.Bold(true)
+// width/height are border-box totals (lipgloss v2 semantics). hue is
+// the panel's pastel; when focused, the border takes its dim cut and
+// the title its saturated cut.
+func (m StatsModel) boxed(title, body string, width, height int, focused bool, hue color.Color) string {
+	borderColor, titleStyle := color.Color(ui.Muted), ui.Dim.Bold(true)
 	if focused {
-		borderColor, titleStyle = ui.Accent, ui.Title
+		sh := hueFor(hue)
+		borderColor = sh.dim
+		titleStyle = lipgloss.NewStyle().Bold(true).Foreground(sh.bright)
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -748,6 +752,15 @@ func (m StatsModel) activeDays() (string, bool) {
 
 func (m StatsModel) chartTitle() string {
 	return "traffic over time · " + rangeLabel(m.rangeDays)
+}
+
+// metricHue is the pastel identity of the active metric; the time
+// panel's focus shades follow it (clicks green, unique violet).
+func (m StatsModel) metricHue() color.Color {
+	if m.metric == "unique_clicks" {
+		return ui.Accent
+	}
+	return ui.Success
 }
 
 // niceCeil rounds up to a 1/2/2.5/5×10ⁿ boundary so axis steps are even.
@@ -864,7 +877,7 @@ func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
 
 	if m.tableOn[p.key] {
 		return m.boxed(p.title, m.panelTableBody(idx, innerW, contentRows, topN, focused, false, false),
-			width, contentRows+3, focused)
+			width, contentRows+3, focused, panelColors[p.key])
 	}
 
 	pts := m.panelPoints(idx, topN)
@@ -912,7 +925,7 @@ func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
 			ui.Bar(dashBarStyle, pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
 			count+ui.Dim.Render(pct))
 	}
-	return m.boxed(p.title, strings.Join(lines, "\n"), width, contentRows+3, focused)
+	return m.boxed(p.title, strings.Join(lines, "\n"), width, contentRows+3, focused, panelHue)
 }
 
 // rowLabel normalizes a point label for display.
@@ -1057,18 +1070,19 @@ func (m StatsModel) focusView() string {
 	var main string
 	if m.focusItem == 0 {
 		if m.tableOn["time"] {
-			main = m.boxed(m.chartTitle()+" · table", m.timeTableBody(mainW-4, mainH-3), mainW, mainH, mainFocused)
+			main = m.boxed(m.chartTitle()+" · table", m.timeTableBody(mainW-4, mainH-3), mainW, mainH, mainFocused, m.metricHue())
 		} else {
 			legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
-			main = m.boxed(m.chartTitle(), legend+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, mainFocused)
+			main = m.boxed(m.chartTitle(), legend+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, mainFocused, m.metricHue())
 		}
 	} else {
 		idx := m.focusItem - 1
+		p := m.panels()[idx]
 		body := m.focusPanelBody(idx, mainW)
-		if m.tableOn[m.panels()[idx].key] {
+		if m.tableOn[p.key] {
 			body = m.panelTableBody(idx, mainW-4, mainH-3, focusTopN, mainFocused, true, true)
 		}
-		main = m.boxed(m.panels()[idx].title, body, mainW, mainH, mainFocused)
+		main = m.boxed(p.title, body, mainW, mainH, mainFocused, panelColors[p.key])
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, main, " ", m.sidebar(mainH))
 }
@@ -1161,7 +1175,7 @@ func (m StatsModel) sidebar(height int) string {
 			lines = append(lines, "")
 		}
 	}
-	return m.boxed("charts", strings.Join(lines, "\n"), sidebarW, height, m.focusPane == 1)
+	return m.boxed("charts", strings.Join(lines, "\n"), sidebarW, height, m.focusPane == 1, ui.Accent)
 }
 
 // sidebarPreview renders up to n compact lines for a sidebar item.
