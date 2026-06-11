@@ -37,12 +37,12 @@ var SparkRunes = []rune("▁▂▃▄▅▆▇█")
 type BarStyle int
 
 const (
-	BarCapped    BarStyle = iota // ╺━━━╸ on ╌╌ track
-	BarUpperHalf                 // ▀▀▀▀ on ·· track
-	BarHalf                      // ▄▄▄▄ on ·· track
-	BarSegmented                 // ▰▰▰▰ on ▱▱ track
-	BarDoubleLine                // ════ on ── track
-	BarFade                      // ██▓▒░ on ·· track
+	BarCapped     BarStyle = iota // ╺━━━╸ on ╌╌ track
+	BarUpperHalf                  // ▀▀▀▀ on ·· track
+	BarHalf                       // ▄▄▄▄ on ·· track
+	BarSegmented                  // ▰▰▰▰ on ▱▱ track
+	BarDoubleLine                 // ════ on ── track
+	BarFade                       // ██▓▒░ on ·· track
 )
 
 // Bar renders a horizontal bar scaled to value/maxV over width columns.

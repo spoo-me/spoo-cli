@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	tslc "github.com/NimbleMarkets/ntcharts/v2/linechart/timeserieslinechart"
@@ -19,17 +20,17 @@ import (
 )
 
 const (
-	panelTopN    = 6
-	focusTopN    = 24 // rows shown for a panel promoted to focus mode
-	twoColMin    = 96
-	threeColMin  = 140
-	defaultRange = 90
-	sidebarW     = 36 // focus-mode sidebar width
-	autoEvery    = 30 * time.Second
+	panelTopN   = 6
+	focusTopN   = 24 // rows shown for a panel promoted to focus mode
+	twoColMin   = 96
+	threeColMin = 140
+	sidebarW    = 36 // focus-mode sidebar width
+	autoEvery   = 30 * time.Second
 )
 
-// rangeCycle is the windows the 't' key steps through (days).
-var rangeCycle = []int{90, 30, 7, 1}
+// defaultWindow is the widest window the server allows — the silent
+// server default is only 7 days, which hides most history.
+var defaultWindow = timeWindow{span: api.MaxRangeDays * 24 * time.Hour, label: "90d"}
 
 type panelDef struct{ key, title string }
 
@@ -53,11 +54,6 @@ type statsLoadedMsg struct {
 	res  *api.StatsResponse
 	prev *api.StatsResponse // previous window, for period-over-period deltas
 	err  error
-
-	// window bounds for the minimap's lookback cache
-	curStart, curEnd   time.Time
-	prevStart, prevEnd time.Time
-	rangeDays          int
 }
 
 type exportDoneMsg struct {
@@ -81,15 +77,18 @@ type StatsModel struct {
 	scope  string // all | anon
 	tz     string
 
-	rangeDays int
-	offset    int // how many windows back in time ('[' / ']')
-	metric    string
-	filters   []filterEntry
-	auto      bool
+	win     timeWindow
+	offset  int // how many windows back in time ('[' / ']')
+	metric  string
+	filters []filterEntry
+	auto    bool
+
+	rangeMode bool // the 'T' range-expression strip is open
+	rangeBox  textinput.Model
+	rangeErr  string
 
 	res      *api.StatsResponse
 	prev     *api.StatsResponse
-	hist     map[string]histPoint // per-day lookback cache for the minimap
 	fetchErr error
 	loading  bool
 	status   string
@@ -106,19 +105,21 @@ type StatsModel struct {
 }
 
 func NewStats(client *api.Client, target, scope, tz string) StatsModel {
+	rangeBox := textinput.New()
+	rangeBox.Placeholder = "7d · 24h · 4h · now - 2w to now - 1w · 2026-01-01 to 2026-02-15"
 	return StatsModel{
-		client:    client,
-		target:    target,
-		scope:     scope,
-		tz:        tz,
-		rangeDays: defaultRange,
-		metric:    "clicks",
-		sel:       map[int]int{},
-		tableOn:   map[string]bool{},
-		hist:      map[string]histPoint{},
-		loading:   true,
-		width:     100,
-		height:    40,
+		client:   client,
+		target:   target,
+		scope:    scope,
+		tz:       tz,
+		win:      defaultWindow,
+		rangeBox: rangeBox,
+		metric:   "clicks",
+		sel:      map[int]int{},
+		tableOn:  map[string]bool{},
+		loading:  true,
+		width:    100,
+		height:   40,
 	}
 }
 
@@ -148,11 +149,15 @@ func (m StatsModel) panels() []panelDef {
 
 func (m StatsModel) Init() tea.Cmd { return m.fetch() }
 
-// window is the date range of the current view: rangeDays wide, paged
-// back offset windows from now.
+// window resolves the current view to concrete bounds: the configured
+// window, paged back offset times by its own span.
 func (m StatsModel) window() (start, end time.Time) {
-	end = time.Now().UTC().AddDate(0, 0, -m.offset*m.rangeDays)
-	return end.AddDate(0, 0, -m.rangeDays), end
+	end = time.Now().UTC()
+	if !m.win.anchored() {
+		end = m.win.end
+	}
+	end = end.Add(-time.Duration(m.offset) * m.win.span)
+	return end.Add(-m.win.span), end
 }
 
 // query builds the stats request for the current dashboard state.
@@ -170,7 +175,7 @@ func (m StatsModel) query() api.StatsQuery {
 		GroupBy:   groupBy,
 		Filters:   map[string][]string{},
 	}
-	if m.offset > 0 {
+	if m.offset > 0 || !m.win.anchored() {
 		q.EndDate = end.Format(time.RFC3339)
 	}
 	for _, f := range m.filters {
@@ -184,13 +189,11 @@ func (m StatsModel) query() api.StatsQuery {
 func (m StatsModel) fetch() tea.Cmd {
 	client := m.client
 	q := m.query()
-	curStart, curEnd := m.window()
-	prevStart, prevEnd := curStart.AddDate(0, 0, -m.rangeDays), curStart
 	prevQ := q
 	prevQ.GroupBy = []string{"time"}
-	prevQ.StartDate = prevStart.Format(time.RFC3339)
-	prevQ.EndDate = prevEnd.Format(time.RFC3339)
-	rangeDays := m.rangeDays
+	start, _ := m.window()
+	prevQ.StartDate = start.Add(-m.win.span).Format(time.RFC3339)
+	prevQ.EndDate = start.Format(time.RFC3339)
 
 	return func() tea.Msg {
 		res, err := client.Stats(context.Background(), q)
@@ -198,12 +201,7 @@ func (m StatsModel) fetch() tea.Cmd {
 		if err == nil {
 			prev, _ = client.Stats(context.Background(), prevQ) // best-effort
 		}
-		return statsLoadedMsg{
-			res: res, prev: prev, err: err,
-			curStart: curStart, curEnd: curEnd,
-			prevStart: prevStart, prevEnd: prevEnd,
-			rangeDays: rangeDays,
-		}
+		return statsLoadedMsg{res: res, prev: prev, err: err}
 	}
 }
 
@@ -267,11 +265,6 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statsLoadedMsg:
 		m.loading = false
 		m.res, m.prev, m.fetchErr = msg.res, msg.prev, msg.err
-		if m.hist == nil {
-			m.hist = map[string]histPoint{}
-		}
-		mergeHist(m.hist, msg.res, msg.curStart, msg.curEnd, msg.rangeDays)
-		mergeHist(m.hist, msg.prev, msg.prevStart, msg.prevEnd, msg.rangeDays)
 		return m, nil
 
 	case exportDoneMsg:
@@ -291,12 +284,45 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		m.status = ""
+		if m.rangeMode {
+			return m.updateRange(msg)
+		}
 		if m.focusMode {
 			return m.updateFocusMode(msg)
 		}
 		return m.updateDashboard(msg)
 	}
 	return m, nil
+}
+
+// updateRange handles keys while the range-expression strip is open.
+func (m StatsModel) updateRange(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "esc":
+		m.rangeMode = false
+		m.rangeErr = ""
+		m.rangeBox.Blur()
+		return m, nil
+	case "enter":
+		win, err := parseRangeExpr(m.rangeBox.Value(), time.Now().UTC())
+		if err != nil {
+			m.rangeErr = err.Error()
+			return m, nil
+		}
+		m.rangeMode = false
+		m.rangeErr = ""
+		m.rangeBox.Blur()
+		m.win = win
+		m.offset = 0
+		m.loading = true
+		return m, m.fetch()
+	}
+	var cmd tea.Cmd
+	m.rangeBox, cmd = m.rangeBox.Update(msg)
+	m.rangeErr = ""
+	return m, cmd
 }
 
 // updateFocusMode handles keys while a single chart fills the screen.
@@ -351,10 +377,7 @@ func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.tableOn[key] = !m.tableOn[key]
 	case "T", "shift+t":
-		m.rangeDays = nextRange(m.rangeDays)
-		m.offset = 0
-		m.loading = true
-		return m, m.fetch()
+		return m.openRange()
 	case "[":
 		m.offset++
 		m.loading = true
@@ -375,6 +398,14 @@ func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// openRange opens the range-expression strip in place of the hints.
+func (m StatsModel) openRange() (tea.Model, tea.Cmd) {
+	m.rangeMode = true
+	m.rangeErr = ""
+	m.rangeBox.SetValue("")
+	return m, m.rangeBox.Focus()
+}
+
 // updateDashboard handles keys in the regular grid view.
 func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	panels := m.panels()
@@ -384,7 +415,6 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if len(m.filters) > 0 {
 			m.filters = nil
-			m.hist = map[string]histPoint{} // lookback was filtered
 			m.loading = true
 			return m, m.fetch()
 		}
@@ -392,7 +422,6 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "x", "backspace":
 		if len(m.filters) > 0 {
 			m.filters = m.filters[:len(m.filters)-1]
-			m.hist = map[string]histPoint{}
 			m.loading = true
 			return m, m.fetch()
 		}
@@ -419,10 +448,7 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		key := panels[m.focus].key
 		m.tableOn[key] = !m.tableOn[key]
 	case "T", "shift+t":
-		m.rangeDays = nextRange(m.rangeDays)
-		m.offset = 0
-		m.loading = true
-		return m, m.fetch()
+		return m.openRange()
 	case "[":
 		m.offset++
 		m.loading = true
@@ -466,7 +492,6 @@ func (m StatsModel) drill(idx, topN int) (tea.Model, tea.Cmd) {
 	}
 	m.filters = append(m.filters, f)
 	m.sel = map[int]int{}
-	m.hist = map[string]histPoint{} // lookback cache is per-filter-set
 	m.loading = true
 	return m, m.fetch()
 }
@@ -478,22 +503,6 @@ func (m StatsModel) hasFilter(f filterEntry) bool {
 		}
 	}
 	return false
-}
-
-func nextRange(current int) int {
-	for i, d := range rangeCycle {
-		if d == current {
-			return rangeCycle[(i+1)%len(rangeCycle)]
-		}
-	}
-	return rangeCycle[0]
-}
-
-func rangeLabel(days int) string {
-	if days == 1 {
-		return "24h"
-	}
-	return fmt.Sprintf("%dd", days)
 }
 
 func otherMetricKey(current string) string {
@@ -557,7 +566,7 @@ func (m StatsModel) panelChunks() [][]int {
 
 // chartHeight gives the time chart the height the grid doesn't need.
 func (m StatsModel) chartHeight() int {
-	used := 2 /*header+footer*/ + 2 /*chart box borders*/ + 2 /*title+legend*/ + minimapRows
+	used := 2 /*header+footer*/ + 2 /*chart box borders*/ + 2 /*title+legend*/
 	if len(m.filters) > 0 {
 		used++
 	}
@@ -585,12 +594,11 @@ func (m StatsModel) View() tea.View {
 		overviewW := m.overviewWidth()
 		chartBoxW := m.width - overviewW - 1
 		legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
-		boxH := chartH + 4 + minimapRows
-		chartBody := legend + "\n" + m.timeChart(chartBoxW-4, chartH) + "\n" + m.minimap(chartBoxW-4)
+		chartBody := legend + "\n" + m.timeChart(chartBoxW-4, chartH)
 		top := lipgloss.JoinHorizontal(lipgloss.Top,
-			m.boxed("overview", m.overviewBody(), overviewW, boxH, false, ui.Accent),
+			m.boxed("overview", m.overviewBody(), overviewW, chartH+4, false, ui.Accent),
 			" ",
-			m.boxed(m.chartTitle(), chartBody, chartBoxW, boxH, false, m.metricHue()),
+			m.boxed(m.chartTitle(), chartBody, chartBoxW, chartH+4, false, m.metricHue()),
 		)
 		b.WriteString(top + "\n")
 		b.WriteString(m.panelGrid() + "\n")
@@ -599,13 +607,20 @@ func (m StatsModel) View() tea.View {
 	if m.status != "" {
 		b.WriteString(m.status + "\n")
 	}
-	hint := "↑/↓ ←/→ navigate · enter drill down · f focus · t table · x undo · u " + otherMetricLabel(m.metric) +
-		" · T range · [/] older/newer · e export · a auto · r refresh · q quit"
-	if m.focusMode {
-		hint = "←/→ pane · ↑/↓ " + paneVerb(m.focusPane) + " · tab chart · enter drill · t table · x close · u " + otherMetricLabel(m.metric) +
-			" · T range · [/] older/newer · e export · r refresh · q quit"
+	switch {
+	case m.rangeMode:
+		strip := ui.Title.Render("range ") + m.rangeBox.View()
+		if m.rangeErr != "" {
+			strip += "  " + ui.Err.Render("✗ "+m.rangeErr)
+		}
+		b.WriteString(strip)
+	case m.focusMode:
+		b.WriteString(ui.KeyHint.Render("←/→ pane · ↑/↓ " + paneVerb(m.focusPane) + " · tab chart · enter drill · t table · x close · u " + otherMetricLabel(m.metric) +
+			" · T range · [/] older/newer · e export · r refresh · q quit"))
+	default:
+		b.WriteString(ui.KeyHint.Render("↑/↓ ←/→ navigate · enter drill down · f focus · t table · x undo · u " + otherMetricLabel(m.metric) +
+			" · T range · [/] older/newer · e export · a auto · r refresh · q quit"))
 	}
-	b.WriteString(ui.KeyHint.Render(hint))
 
 	v := tea.NewView(b.String())
 	v.AltScreen = true
@@ -628,7 +643,7 @@ func (m StatsModel) headerLine() string {
 	if m.res != nil && m.res.TimeRange.StartDate != "" {
 		h += ui.Dim.Render("  ·  " + isoDate(m.res.TimeRange.StartDate) + " → " + isoDate(m.res.TimeRange.EndDate))
 	} else {
-		h += ui.Dim.Render("  ·  last " + rangeLabel(m.rangeDays))
+		h += ui.Dim.Render("  ·  last " + m.win.label)
 	}
 	if m.offset > 0 {
 		past := lipgloss.NewStyle().Foreground(ui.Yellow)
@@ -775,11 +790,12 @@ func (m StatsModel) activeDays() (string, bool) {
 	if len(days) == 0 {
 		return "", false
 	}
-	return fmt.Sprintf("%d of %d", len(days), max(1, m.rangeDays)), true
+	spanDays := max(1, int(m.win.span/(24*time.Hour)))
+	return fmt.Sprintf("%d of %d", len(days), spanDays), true
 }
 
 func (m StatsModel) chartTitle() string {
-	return "traffic over time · " + rangeLabel(m.rangeDays)
+	return "traffic over time · " + m.win.label
 }
 
 // metricHue is the pastel identity of the active metric; the time
@@ -1101,8 +1117,7 @@ func (m StatsModel) focusView() string {
 			main = m.boxed(m.chartTitle()+" · table", m.timeTableBody(mainW-4, mainH-3), mainW, mainH, mainFocused, m.metricHue())
 		} else {
 			legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
-			body := legend + "\n" + m.timeChart(mainW-4, mainH-4-minimapRows) + "\n" + m.minimap(mainW-4)
-			main = m.boxed(m.chartTitle(), body, mainW, mainH, mainFocused, m.metricHue())
+			main = m.boxed(m.chartTitle(), legend+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, mainFocused, m.metricHue())
 		}
 	} else {
 		idx := m.focusItem - 1
