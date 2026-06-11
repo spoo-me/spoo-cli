@@ -23,7 +23,6 @@ const (
 	twoColMin    = 96
 	threeColMin  = 140
 	defaultRange = 90
-	overviewW    = 32 // fixed width of the overview panel
 	autoEvery    = 30 * time.Second
 )
 
@@ -327,6 +326,12 @@ func (m StatsModel) metricTotal() float64 {
 
 // ── layout ────────────────────────────────────────────────────────────
 
+// overviewWidth scales the overview panel with the terminal (~20% of
+// the width) instead of pinching it on wide screens.
+func (m StatsModel) overviewWidth() int {
+	return min(48, max(32, m.width/5))
+}
+
 func (m StatsModel) gridCols() int {
 	switch {
 	case m.width >= threeColMin:
@@ -388,6 +393,7 @@ func (m StatsModel) View() tea.View {
 		b.WriteString("\n" + ui.Dim.Render("loading…") + "\n")
 	default:
 		chartH := m.chartHeight()
+		overviewW := m.overviewWidth()
 		chartBoxW := m.width - overviewW - 1
 		legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
 		chartBody := legend + "\n" + m.timeChart(chartBoxW-4, chartH)
@@ -469,7 +475,7 @@ func (m StatsModel) boxed(title, body string, width, height int, focused bool) s
 
 func (m StatsModel) overviewBody() string {
 	s := m.res.Summary
-	labelW := 13
+	labelW := min(16, max(13, m.overviewWidth()-18))
 	row := func(label, value string, style lipgloss.Style) string {
 		return ui.Dim.Render(padToWidth(label, labelW)) + style.Render(value)
 	}
