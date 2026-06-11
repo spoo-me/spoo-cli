@@ -87,7 +87,8 @@ func TestDrillDownAddsServerSideFilter(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	m := newStatsModel(t, srv.URL) // focus 0 = top links, selection 0 = launch
+	m := newStatsModel(t, srv.URL)
+	m, _ = statsKey(t, m, "tab") // focus 1 = top links, selection 0 = launch
 	m, cmd := statsKey(t, m, "enter")
 	if len(m.filters) != 1 || m.filters[0] != (filterEntry{dim: "short_code", value: "launch"}) {
 		t.Fatalf("filters = %+v", m.filters)
@@ -174,10 +175,14 @@ func TestRangeExpressionRejectsGarbage(t *testing.T) {
 
 func TestPanelFocusAndSelection(t *testing.T) {
 	m := newStatsModel(t, "http://unused.invalid")
-	m, _ = statsKey(t, m, "tab")
-	m, _ = statsKey(t, m, "tab")
-	if m.focus != 2 {
-		t.Fatalf("focus = %d, want 2 (OS)", m.focus)
+	if m.focus != 0 {
+		t.Fatalf("focus = %d, want the time chart focused first", m.focus)
+	}
+	for range 3 {
+		m, _ = statsKey(t, m, "tab")
+	}
+	if m.focus != 3 {
+		t.Fatalf("focus = %d, want 3 (OS)", m.focus)
 	}
 	m, _ = statsKey(t, m, "j")
 	if m.sel[2] != 0 { // OS panel has one row; selection clamps
@@ -189,7 +194,8 @@ func TestPanelFocusAndSelection(t *testing.T) {
 // ←/→ switches panes, and in the sidebar ↑/↓ walks the charts.
 func TestFocusModePromotesAndCycles(t *testing.T) {
 	m := newStatsModel(t, "http://unused.invalid")
-	m, _ = statsKey(t, m, "tab") // focus panel 1 (browsers)
+	m, _ = statsKey(t, m, "tab") // top links
+	m, _ = statsKey(t, m, "tab") // browsers
 	m, _ = statsKey(t, m, "f")
 	if !m.focusMode || m.focusItem != 2 { // item 0 = time chart, 2 = browsers
 		t.Fatalf("focusMode=%v item=%d, want focused browsers (2)", m.focusMode, m.focusItem)
@@ -224,6 +230,9 @@ func TestFocusModePromotesAndCycles(t *testing.T) {
 	if m.focusMode {
 		t.Fatal("x did not exit focus mode")
 	}
+	if m.focus != 3 { // exit hands the dashboard cursor the last focused chart
+		t.Fatalf("focus after exit = %d, want 3", m.focus)
+	}
 }
 
 // enter in the main pane drills down on the selected row.
@@ -234,6 +243,7 @@ func TestFocusModeEnterDrills(t *testing.T) {
 	defer srv.Close()
 
 	m := newStatsModel(t, srv.URL)
+	m, _ = statsKey(t, m, "tab") // top links
 	m, _ = statsKey(t, m, "tab") // browsers
 	m, _ = statsKey(t, m, "f")
 	m, _ = statsKey(t, m, "j") // select Safari
@@ -277,6 +287,7 @@ func TestEscClearsFiltersThenQuits(t *testing.T) {
 	defer srv.Close()
 
 	m := newStatsModel(t, srv.URL)
+	m, _ = statsKey(t, m, "tab")   // top links
 	m, _ = statsKey(t, m, "enter") // add a filter
 	m, cmd := statsKey(t, m, "esc")
 	if len(m.filters) != 0 || cmd == nil {
@@ -292,7 +303,8 @@ func TestEscClearsFiltersThenQuits(t *testing.T) {
 // panel keeps its own mode, so several tables can be open at once.
 func TestTableToggleIsPerPanel(t *testing.T) {
 	m := newStatsModel(t, "http://unused.invalid")
-	m, cmd := statsKey(t, m, "t") // focus 0 = top links
+	m, _ = statsKey(t, m, "tab")  // focus 1 = top links
+	m, cmd := statsKey(t, m, "t") // toggle its table
 	if cmd != nil {
 		t.Fatal("table toggle must not refetch")
 	}
@@ -316,24 +328,34 @@ func TestTableToggleIsPerPanel(t *testing.T) {
 	}
 }
 
-// inside focus mode, t toggles the promoted chart's table view —
-// including the time chart, which becomes a date/clicks/unique table.
-func TestTableToggleInFocusMode(t *testing.T) {
+// the time chart is focusable like any panel; t turns it into a
+// date/clicks/unique table on the dashboard and in focus mode alike.
+func TestTimeChartFocusAndTable(t *testing.T) {
 	m := newStatsModel(t, "http://unused.invalid")
-	m, _ = statsKey(t, m, "f")
-	m, _ = statsKey(t, m, "l") // sidebar pane
-	m, _ = statsKey(t, m, "k") // walk charts: item 1 → 0 (time chart)
-	if m.focusItem != 0 {
-		t.Fatalf("focusItem = %d, want 0 (time chart)", m.focusItem)
+	m, _ = statsKey(t, m, "t") // focus starts on the time chart
+	if !m.tableOn["time"] {
+		t.Fatal("t did not toggle the time table on the dashboard")
+	}
+	view := m.View().Content
+	for _, want := range []string{"· table", "2026-06-02", "unique"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("dashboard time table missing %q", want)
+		}
+	}
+
+	m, _ = statsKey(t, m, "t") // back to the chart
+	m, _ = statsKey(t, m, "f") // promote the time chart
+	if !m.focusMode || m.focusItem != 0 {
+		t.Fatalf("focusMode=%v item=%d, want time chart promoted", m.focusMode, m.focusItem)
 	}
 	m, _ = statsKey(t, m, "t")
 	if !m.tableOn["time"] {
 		t.Fatal("t did not toggle the time table in focus mode")
 	}
-	view := m.View().Content
+	view = m.View().Content
 	for _, want := range []string{"· table", "2026-06-02", "unique"} {
 		if !strings.Contains(view, want) {
-			t.Fatalf("time table missing %q", want)
+			t.Fatalf("focus-mode time table missing %q", want)
 		}
 	}
 }

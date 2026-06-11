@@ -40,6 +40,12 @@ const dashBarStyle = ui.BarUpperHalf
 
 // panelColors gives every panel its own pastel hue (entity brand
 // colors in colors.go override per row where known).
+// the time chart's series duo: sky for clicks, pink for unique
+var (
+	chartClicks = lipgloss.NewStyle().Foreground(ui.Blue)
+	chartUnique = lipgloss.NewStyle().Foreground(ui.Pink)
+)
+
 var panelColors = map[string]color.Color{
 	"short_code": ui.Accent,
 	"browser":    ui.Success,
@@ -336,6 +342,7 @@ func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "x", "esc", "f":
 		m.focusMode = false
+		m.focus = m.focusItem // keep the dashboard cursor where you left off
 		return m, nil
 	case "left", "h":
 		m.focusPane = 0
@@ -407,9 +414,10 @@ func (m StatsModel) openRange() (tea.Model, tea.Cmd) {
 	return m, m.rangeBox.Focus()
 }
 
-// updateDashboard handles keys in the regular grid view.
+// updateDashboard handles keys in the regular grid view. The focus
+// space matches focus mode: 0 is the time chart, 1.. the grid panels.
 func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	panels := m.panels()
+	items := len(m.panels()) + 1
 	switch msg.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
@@ -428,25 +436,36 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "f":
 		m.focusMode = true
-		m.focusItem = m.focus + 1 // promote the focused panel
+		m.focusItem = m.focus // same index space
 		m.focusPane = 0
 		return m, nil
 	case "tab", "right", "l":
-		m.focus = (m.focus + 1) % len(panels)
+		m.focus = (m.focus + 1) % items
 	case "shift+tab", "left", "h":
-		m.focus = (m.focus + len(panels) - 1) % len(panels)
+		m.focus = (m.focus + items - 1) % items
 	case "down", "j":
-		if n := len(m.panelPoints(m.focus, panelTopN)); n > 0 {
-			m.sel[m.focus] = min(m.sel[m.focus]+1, n-1)
+		if m.focus > 0 {
+			idx := m.focus - 1
+			if n := len(m.panelPoints(idx, panelTopN)); n > 0 {
+				m.sel[idx] = min(m.sel[idx]+1, n-1)
+			}
 		}
 	case "up", "k":
-		m.sel[m.focus] = max(m.sel[m.focus]-1, 0)
+		if m.focus > 0 {
+			idx := m.focus - 1
+			m.sel[idx] = max(m.sel[idx]-1, 0)
+		}
 	case "enter":
-		return m.drill(m.focus, panelTopN)
+		if m.focus > 0 {
+			return m.drill(m.focus-1, panelTopN)
+		}
 	case "u":
 		m.metric = otherMetricKey(m.metric)
 	case "t":
-		key := panels[m.focus].key
+		key := "time"
+		if m.focus > 0 {
+			key = m.panels()[m.focus-1].key
+		}
 		m.tableOn[key] = !m.tableOn[key]
 	case "T", "shift+t":
 		return m.openRange()
@@ -523,10 +542,10 @@ func (m StatsModel) metricTotal() float64 {
 
 // ── layout ────────────────────────────────────────────────────────────
 
-// overviewWidth scales the overview panel with the terminal (~25% of
+// overviewWidth scales the overview panel with the terminal (~30% of
 // the width) instead of pinching it on wide screens.
 func (m StatsModel) overviewWidth() int {
-	return min(56, max(32, m.width/4))
+	return min(64, max(36, m.width*3/10))
 }
 
 func (m StatsModel) gridCols() int {
@@ -593,13 +612,19 @@ func (m StatsModel) View() tea.View {
 	default:
 		chartH := m.chartHeight()
 		overviewW := m.overviewWidth()
-		chartBoxW := m.width - overviewW - 1
-		legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
-		chartBody := legend + "\n" + m.timeChart(chartBoxW-4, chartH)
+		chartBoxW := m.width - overviewW
+		chartFocused := m.focus == 0
+		title, chartBody := m.chartTitle(), ""
+		if m.tableOn["time"] {
+			title += " · table"
+			chartBody = m.timeTableBody(chartBoxW-4, chartH+1)
+		} else {
+			legend := chartClicks.Render("─── clicks") + "  " + chartUnique.Render("─── unique")
+			chartBody = legend + "\n" + m.timeChart(chartBoxW-4, chartH)
+		}
 		top := lipgloss.JoinHorizontal(lipgloss.Top,
 			m.boxed("overview", m.overviewBody(), overviewW, chartH+4, false, ui.Accent),
-			" ",
-			m.boxed(m.chartTitle(), chartBody, chartBoxW, chartH+4, false, m.metricHue()),
+			m.boxed(title, chartBody, chartBoxW, chartH+4, chartFocused, m.metricHue()),
 		)
 		b.WriteString(top + "\n")
 		b.WriteString(m.panelGrid() + "\n")
@@ -658,7 +683,8 @@ func (m StatsModel) headerLine() string {
 		past := lipgloss.NewStyle().Foreground(ui.Yellow)
 		h += ui.Dim.Render("  ·  ") + past.Render(fmt.Sprintf("≪ %d window%s back", m.offset, plural(m.offset)))
 	}
-	h += ui.Dim.Render("  ·  metric: ") + ui.OK.Render(strings.ReplaceAll(m.metric, "_", " "))
+	metricStyle := lipgloss.NewStyle().Bold(true).Foreground(m.metricHue())
+	h += ui.Dim.Render("  ·  metric: ") + metricStyle.Render(strings.ReplaceAll(m.metric, "_", " "))
 	if m.auto {
 		h += ui.Dim.Render("  ·  ") + ui.OK.Render("auto 30s")
 	}
@@ -808,12 +834,12 @@ func (m StatsModel) chartTitle() string {
 }
 
 // metricHue is the pastel identity of the active metric; the time
-// panel's focus shades follow it (clicks green, unique violet).
+// panel's focus shades follow it (clicks sky, unique pink).
 func (m StatsModel) metricHue() color.Color {
 	if m.metric == "unique_clicks" {
-		return ui.Accent
+		return ui.Pink
 	}
-	return ui.Success
+	return ui.Blue
 }
 
 // niceCeil rounds up to a 1/2/2.5/5×10ⁿ boundary so axis steps are even.
@@ -890,33 +916,36 @@ func (m StatsModel) timeChart(width, height int) string {
 			return fmt.Sprintf("%*.0f", yWidth, v)
 		}),
 		tslc.WithAxesStyles(ui.Dim, ui.Dim),
-		tslc.WithStyle(ui.OK),
+		tslc.WithStyle(chartClicks),
 	)
 	if len(uniqueSeries) > 0 {
 		for _, tp := range uniqueSeries {
 			chart.PushDataSet("unique", tp)
 		}
-		chart.SetDataSetStyle("unique", ui.Title)
+		chart.SetDataSetStyle("unique", chartUnique)
 	}
 	chart.DrawBrailleAll()
 	return chart.View()
 }
 
-// panelGrid lays the breakdown panels out in responsive columns with a
-// one-column gutter; every panel shares the same height.
+// panelGrid lays the breakdown panels out in responsive columns;
+// boxes sit border-to-border and the division remainder widens the
+// leading panels so each row spans the full terminal width.
 func (m StatsModel) panelGrid() string {
 	cols := m.gridCols()
-	panelW := (m.width - (cols - 1)) / cols
+	panelW := m.width / cols
+	rem := m.width - panelW*cols
 	contentRows := m.uniformRows()
 
 	var rows []string
 	for _, chunk := range m.panelChunks() {
-		row := make([]string, 0, cols*2)
-		for _, i := range chunk {
-			if len(row) > 0 {
-				row = append(row, " ")
+		row := make([]string, 0, cols)
+		for n, i := range chunk {
+			w := panelW
+			if n < rem {
+				w++
 			}
-			row = append(row, m.panelView(i, panelW, contentRows, panelTopN))
+			row = append(row, m.panelView(i, w, contentRows, panelTopN))
 		}
 		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, row...))
 	}
@@ -925,7 +954,7 @@ func (m StatsModel) panelGrid() string {
 
 func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
 	p := m.panels()[idx]
-	focused := !m.focusMode && idx == m.focus
+	focused := !m.focusMode && idx == m.focus-1
 	innerW := width - 4 // border-box width minus borders and padding
 
 	if m.tableOn[p.key] {
@@ -971,7 +1000,7 @@ func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
 		}
 
 		marker, labelStyle := "  ", lipgloss.NewStyle()
-		if focused && i == m.sel[m.focus] {
+		if focused && i == m.sel[idx] {
 			marker, labelStyle = ui.Title.Render("▸ "), ui.Title
 		}
 		lines = append(lines, marker+labelStyle.Render(label)+" "+
@@ -1125,7 +1154,7 @@ func (m StatsModel) focusView() string {
 		if m.tableOn["time"] {
 			main = m.boxed(m.chartTitle()+" · table", m.timeTableBody(mainW-4, mainH-3), mainW, mainH, mainFocused, m.metricHue())
 		} else {
-			legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
+			legend := chartClicks.Render("─── clicks") + "  " + chartUnique.Render("─── unique")
 			main = m.boxed(m.chartTitle(), legend+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, mainFocused, m.metricHue())
 		}
 	} else {
