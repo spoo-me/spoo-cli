@@ -626,7 +626,6 @@ func (m StatsModel) panelChunks() [][]int {
 }
 
 // chartHeight gives the time chart the height the grid doesn't need.
-// Grid rows cost rows+2 lines each: borders are shared between rows.
 func (m StatsModel) chartHeight() int {
 	used := 2 /*header+footer*/ + 2 /*chart box borders*/ + 2 /*title+legend*/
 	if m.helper.ShowAll {
@@ -636,7 +635,7 @@ func (m StatsModel) chartHeight() int {
 		used++
 	}
 	rows := m.uniformRows()
-	used += len(m.panelChunks()) * (rows + 2)
+	used += len(m.panelChunks()) * (rows + 3)
 	return min(20, max(7, m.height-used-1))
 }
 
@@ -657,7 +656,7 @@ func (m StatsModel) View() tea.View {
 	default:
 		chartH := m.chartHeight()
 		overviewW := m.overviewWidth()
-		chartBoxW := m.width - overviewW + 1 // shares a border column with the overview
+		chartBoxW := m.width - overviewW
 		chartFocused := !m.focusMode && m.focus == 0
 		title, chartBody := m.chartTitle(), ""
 		if m.tableOn["time"] {
@@ -967,35 +966,28 @@ func (m StatsModel) timeChart(width, height int) string {
 	return chart.View()
 }
 
-// composeBody lays the whole dashboard body out as compositor layers
-// with every neighboring border OVERLAPPED by one cell, so panels are
-// separated by a single shared border line both vertically and
-// horizontally. The focused panel is drawn last (highest z) so its
-// colored ring survives the shared seams; everything else gets an
+// composeBody lays the whole dashboard body out as compositor layers.
+// Cards stay distinct, with their borders directly adjacent — the
+// smallest gap that keeps every panel its own box. Layers carry an
 // incrementing z because the compositor's z-sort is not stable.
 func (m StatsModel) composeBody(overviewBox, chartBox string, chartH int) string {
 	cols := m.gridCols()
-	usable := m.width + (cols - 1) // interior borders are shared
-	panelW := usable / cols
-	rem := usable - panelW*cols
+	panelW := m.width / cols
+	rem := m.width - panelW*cols
 	contentRows := m.uniformRows()
 	panelH := contentRows + 3
 
 	z := 0
-	layer := func(content string, x, y int, focused bool) *lipgloss.Layer {
+	layer := func(content string, x, y int) *lipgloss.Layer {
 		z++
-		l := lipgloss.NewLayer(content).X(x).Y(y).Z(z)
-		if focused {
-			l = l.Z(1000)
-		}
-		return l
+		return lipgloss.NewLayer(content).X(x).Y(y).Z(z)
 	}
 
 	layers := []*lipgloss.Layer{
-		layer(overviewBox, 0, 0, false),
-		layer(chartBox, m.overviewWidth()-1, 0, !m.focusMode && m.focus == 0),
+		layer(overviewBox, 0, 0),
+		layer(chartBox, m.overviewWidth(), 0),
 	}
-	gridY := chartH + 4 - 1 // the grid's top border rides the top row's bottom
+	gridY := chartH + 4
 	chunks := m.panelChunks()
 	for r, chunk := range chunks {
 		x := 0
@@ -1004,14 +996,12 @@ func (m StatsModel) composeBody(overviewBox, chartBox string, chartH int) string
 			if n < rem {
 				w++
 			}
-			focused := !m.focusMode && i == m.focus-1
 			layers = append(layers,
-				layer(m.panelView(i, w, contentRows, panelTopN), x, gridY+r*(panelH-1), focused))
-			x += w - 1
+				layer(m.panelView(i, w, contentRows, panelTopN), x, gridY+r*panelH))
+			x += w
 		}
 	}
-	bodyH := gridY + len(chunks)*(panelH-1) + 1
-	return healBorders(lipgloss.NewCompositor(layers...).Render(), m.width, bodyH)
+	return lipgloss.NewCompositor(layers...).Render()
 }
 
 func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
