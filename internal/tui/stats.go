@@ -93,6 +93,7 @@ type StatsModel struct {
 
 	focusMode bool
 	focusItem int // 0 = time chart, 1.. = panels()[focusItem-1]
+	focusPane int // 0 = main view, 1 = sidebar (←/→ switches)
 
 	width  int
 	height int
@@ -275,6 +276,8 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // updateFocusMode handles keys while a single chart fills the screen.
+// ←/→ moves focus between the main view and the sidebar; ↑/↓ moves
+// rows in the main view or switches charts in the sidebar.
 func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	items := len(m.panels()) + 1 // + the time chart
 	switch msg.String() {
@@ -283,10 +286,38 @@ func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "x", "esc", "f":
 		m.focusMode = false
 		return m, nil
-	case "j", "down", "tab":
+	case "left", "h":
+		m.focusPane = 0
+	case "right", "l":
+		m.focusPane = 1
+	case "tab":
 		m.focusItem = (m.focusItem + 1) % items
-	case "k", "up", "shift+tab":
+	case "shift+tab":
 		m.focusItem = (m.focusItem + items - 1) % items
+	case "down", "j":
+		if m.focusPane == 1 {
+			m.focusItem = (m.focusItem + 1) % items
+			break
+		}
+		if m.focusItem > 0 {
+			idx := m.focusItem - 1
+			if n := len(m.panelPoints(idx, focusTopN)); n > 0 {
+				m.sel[idx] = min(m.sel[idx]+1, n-1)
+			}
+		}
+	case "up", "k":
+		if m.focusPane == 1 {
+			m.focusItem = (m.focusItem + items - 1) % items
+			break
+		}
+		if m.focusItem > 0 {
+			idx := m.focusItem - 1
+			m.sel[idx] = max(m.sel[idx]-1, 0)
+		}
+	case "enter":
+		if m.focusPane == 0 && m.focusItem > 0 {
+			return m.drill(m.focusItem-1, focusTopN)
+		}
 	case "u":
 		m.metric = otherMetricKey(m.metric)
 	case "t":
@@ -342,6 +373,7 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "f":
 		m.focusMode = true
 		m.focusItem = m.focus + 1 // promote the focused panel
+		m.focusPane = 0
 		return m, nil
 	case "tab", "right", "l":
 		m.focus = (m.focus + 1) % len(panels)
@@ -354,24 +386,7 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "up", "k":
 		m.sel[m.focus] = max(m.sel[m.focus]-1, 0)
 	case "enter":
-		dim := panels[m.focus].key
-		if dim == "weekday" {
-			m.status = ui.Dim.Render("weekdays are computed locally — nothing to drill into")
-			break
-		}
-		pts := m.panelPoints(m.focus, panelTopN)
-		i := min(m.sel[m.focus], len(pts)-1)
-		if i < 0 {
-			break
-		}
-		f := filterEntry{dim: dim, value: pts[i].Label}
-		if m.hasFilter(f) {
-			break
-		}
-		m.filters = append(m.filters, f)
-		m.sel = map[int]int{}
-		m.loading = true
-		return m, m.fetch()
+		return m.drill(m.focus, panelTopN)
 	case "u":
 		m.metric = otherMetricKey(m.metric)
 	case "t":
@@ -405,6 +420,28 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, m.fetch()
 	}
 	return m, nil
+}
+
+// drill adds a server-side filter for the selected row of panel idx.
+func (m StatsModel) drill(idx, topN int) (tea.Model, tea.Cmd) {
+	dim := m.panels()[idx].key
+	if dim == "weekday" {
+		m.status = ui.Dim.Render("weekdays are computed locally — nothing to drill into")
+		return m, nil
+	}
+	pts := m.panelPoints(idx, topN)
+	i := min(m.sel[idx], len(pts)-1)
+	if i < 0 {
+		return m, nil
+	}
+	f := filterEntry{dim: dim, value: pts[i].Label}
+	if m.hasFilter(f) {
+		return m, nil
+	}
+	m.filters = append(m.filters, f)
+	m.sel = map[int]int{}
+	m.loading = true
+	return m, m.fetch()
 }
 
 func (m StatsModel) hasFilter(f filterEntry) bool {
@@ -537,7 +574,7 @@ func (m StatsModel) View() tea.View {
 	hint := "↑/↓ ←/→ navigate · enter drill down · f focus · t table · x undo · u " + otherMetricLabel(m.metric) +
 		" · T range · [/] older/newer · e export · a auto · r refresh · q quit"
 	if m.focusMode {
-		hint = "j/k switch chart · t table · x close · u " + otherMetricLabel(m.metric) +
+		hint = "←/→ pane · ↑/↓ " + paneVerb(m.focusPane) + " · tab chart · enter drill · t table · x close · u " + otherMetricLabel(m.metric) +
 			" · T range · [/] older/newer · e export · r refresh · q quit"
 	}
 	b.WriteString(ui.KeyHint.Render(hint))
@@ -1016,21 +1053,22 @@ func (m StatsModel) focusView() string {
 		mainH--
 	}
 
+	mainFocused := m.focusPane == 0
 	var main string
 	if m.focusItem == 0 {
 		if m.tableOn["time"] {
-			main = m.boxed(m.chartTitle()+" · table", m.timeTableBody(mainW-4, mainH-3), mainW, mainH, true)
+			main = m.boxed(m.chartTitle()+" · table", m.timeTableBody(mainW-4, mainH-3), mainW, mainH, mainFocused)
 		} else {
 			legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
-			main = m.boxed(m.chartTitle(), legend+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, true)
+			main = m.boxed(m.chartTitle(), legend+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, mainFocused)
 		}
 	} else {
 		idx := m.focusItem - 1
 		body := m.focusPanelBody(idx, mainW)
 		if m.tableOn[m.panels()[idx].key] {
-			body = m.panelTableBody(idx, mainW-4, mainH-3, focusTopN, false, true, true)
+			body = m.panelTableBody(idx, mainW-4, mainH-3, focusTopN, mainFocused, true, true)
 		}
-		main = m.boxed(m.panels()[idx].title, body, mainW, mainH, true)
+		main = m.boxed(m.panels()[idx].title, body, mainW, mainH, mainFocused)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, main, " ", m.sidebar(mainH))
 }
@@ -1061,17 +1099,21 @@ func (m StatsModel) focusPanelBody(idx, width int) string {
 		labelW = max(labelW, lipgloss.Width(m.rowLabel(p.key, pt.Label))+1)
 	}
 	labelW = min(labelW, max(12, innerW*2/5))
-	barMax := max(10, innerW-labelW-5-5-1)
+	barMax := max(10, innerW-labelW-5-5-1-2) // -2: selection marker column
 
 	lines := make([]string, 0, len(pts))
-	for _, pt := range pts {
+	for i, pt := range pts {
 		label := padToWidth(truncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
 		count := fmt.Sprintf("%5.0f", pt.Value)
 		pct := "     "
 		if total > 0 {
 			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)
 		}
-		lines = append(lines, label+" "+
+		marker, labelStyle := "  ", lipgloss.NewStyle()
+		if m.focusPane == 0 && i == m.sel[idx] {
+			marker, labelStyle = ui.Title.Render("▸ "), ui.Title
+		}
+		lines = append(lines, marker+labelStyle.Render(label)+" "+
 			ui.Bar(dashBarStyle, pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
 			count+ui.Dim.Render(pct))
 	}
@@ -1119,7 +1161,7 @@ func (m StatsModel) sidebar(height int) string {
 			lines = append(lines, "")
 		}
 	}
-	return m.boxed("charts", strings.Join(lines, "\n"), sidebarW, height, false)
+	return m.boxed("charts", strings.Join(lines, "\n"), sidebarW, height, m.focusPane == 1)
 }
 
 // sidebarPreview renders up to n compact lines for a sidebar item.
@@ -1170,3 +1212,11 @@ func truncateToWidth(s string, w int) string {
 
 // FetchErr reports a fetch error so the command can surface it on exit.
 func (m StatsModel) FetchErr() error { return m.fetchErr }
+
+// paneVerb names what ↑/↓ act on in focus mode.
+func paneVerb(pane int) string {
+	if pane == 1 {
+		return "charts"
+	}
+	return "rows"
+}
