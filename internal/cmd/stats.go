@@ -23,9 +23,11 @@ func newStatsCmd() *cobra.Command {
 		Long: `Interactive analytics dashboard.
 
 On a terminal this opens a live dashboard: time chart, browser/OS/
-country/city/referrer panels, drill-down filtering, range cycling, and
-a clicks/unique toggle. Piped, with --json, with --plain, or with a
-custom --from/--to range it prints a static report instead.
+country/city/referrer panels, drill-down filtering, and a clicks/unique
+toggle. Press T to type a time range — trailing windows (7d, 24h, 4h,
+5m, 2w), relative ranges (now - 2w to now - 1w), or absolute dates
+(2026-01-01 to 2026-02-15). Piped, with --json, with --plain, or with
+a custom --from/--to range it prints a static report instead.
 
 Logged in without a short code, aggregates across all your links.
 With a short code, shows that link — public stats work without login.`,

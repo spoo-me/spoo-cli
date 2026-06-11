@@ -106,7 +106,8 @@ type StatsModel struct {
 
 func NewStats(client *api.Client, target, scope, tz string) StatsModel {
 	rangeBox := textinput.New()
-	rangeBox.Placeholder = "7d · 24h · 4h · now - 2w to now - 1w · 2026-01-01 to 2026-02-15"
+	rangeBox.Placeholder = "type a range…"
+	rangeBox.SetWidth(36) // fits "2026-01-01 to 2026-02-15" with room; keeps the cheat-sheet column still
 	return StatsModel{
 		client:   client,
 		target:   target,
@@ -610,8 +611,13 @@ func (m StatsModel) View() tea.View {
 	switch {
 	case m.rangeMode:
 		strip := ui.Title.Render("range ") + m.rangeBox.View()
+		// a persistent cheat-sheet rides the strip; errors take its place
+		tail, tailStyle := "e.g. 7d · 24h · 4h · 5m · now - 2w to now - 1w · 2026-01-01 to 2026-02-15 · enter apply · esc cancel", ui.KeyHint
 		if m.rangeErr != "" {
-			strip += "  " + ui.Err.Render("✗ "+m.rangeErr)
+			tail, tailStyle = "✗ "+m.rangeErr, ui.Err
+		}
+		if room := m.width - lipgloss.Width(strip) - 2; room > 4 {
+			strip += "  " + tailStyle.Render(truncateToWidth(tail, room))
 		}
 		b.WriteString(strip)
 	case m.focusMode:
