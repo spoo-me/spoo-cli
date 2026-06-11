@@ -626,6 +626,7 @@ func (m StatsModel) panelChunks() [][]int {
 }
 
 // chartHeight gives the time chart the height the grid doesn't need.
+// Grid rows cost rows+2 lines each: borders are shared between rows.
 func (m StatsModel) chartHeight() int {
 	used := 2 /*header+footer*/ + 2 /*chart box borders*/ + 2 /*title+legend*/
 	if m.helper.ShowAll {
@@ -635,7 +636,7 @@ func (m StatsModel) chartHeight() int {
 		used++
 	}
 	rows := m.uniformRows()
-	used += len(m.panelChunks()) * (rows + 3)
+	used += len(m.panelChunks()) * (rows + 2)
 	return min(20, max(7, m.height-used-1))
 }
 
@@ -656,8 +657,8 @@ func (m StatsModel) View() tea.View {
 	default:
 		chartH := m.chartHeight()
 		overviewW := m.overviewWidth()
-		chartBoxW := m.width - overviewW - 1
-		chartFocused := m.focus == 0
+		chartBoxW := m.width - overviewW + 1 // shares a border column with the overview
+		chartFocused := !m.focusMode && m.focus == 0
 		title, chartBody := m.chartTitle(), ""
 		if m.tableOn["time"] {
 			title += " · table"
@@ -666,13 +667,11 @@ func (m StatsModel) View() tea.View {
 			legend := chartClicks.Render("─── clicks") + "  " + chartUnique.Render("─── unique")
 			chartBody = legend + "\n" + m.timeChart(chartBoxW-4, chartH)
 		}
-		top := lipgloss.JoinHorizontal(lipgloss.Top,
+		b.WriteString(m.composeBody(
 			m.boxed("overview", m.overviewBody(), overviewW, chartH+4, false, ui.Accent),
-			" ",
 			m.boxed(title, chartBody, chartBoxW, chartH+4, chartFocused, m.metricHue()),
-		)
-		b.WriteString(top + "\n")
-		b.WriteString(m.panelGrid() + "\n")
+			chartH,
+		) + "\n")
 	}
 
 	if m.status != "" {
@@ -968,33 +967,51 @@ func (m StatsModel) timeChart(width, height int) string {
 	return chart.View()
 }
 
-// panelGrid lays the breakdown panels out in responsive columns. A
-// one-column gutter visually matches the stacked borders between rows
-// (terminal cells are ~2:1), and the division remainder widens the
-// leading panels so each row spans the full terminal width.
-func (m StatsModel) panelGrid() string {
+// composeBody lays the whole dashboard body out as compositor layers
+// with every neighboring border OVERLAPPED by one cell, so panels are
+// separated by a single shared border line both vertically and
+// horizontally. The focused panel is drawn last (highest z) so its
+// colored ring survives the shared seams; everything else gets an
+// incrementing z because the compositor's z-sort is not stable.
+func (m StatsModel) composeBody(overviewBox, chartBox string, chartH int) string {
 	cols := m.gridCols()
-	usable := m.width - (cols - 1)
+	usable := m.width + (cols - 1) // interior borders are shared
 	panelW := usable / cols
 	rem := usable - panelW*cols
 	contentRows := m.uniformRows()
+	panelH := contentRows + 3
 
-	var rows []string
-	for _, chunk := range m.panelChunks() {
-		row := make([]string, 0, cols*2)
+	z := 0
+	layer := func(content string, x, y int, focused bool) *lipgloss.Layer {
+		z++
+		l := lipgloss.NewLayer(content).X(x).Y(y).Z(z)
+		if focused {
+			l = l.Z(1000)
+		}
+		return l
+	}
+
+	layers := []*lipgloss.Layer{
+		layer(overviewBox, 0, 0, false),
+		layer(chartBox, m.overviewWidth()-1, 0, !m.focusMode && m.focus == 0),
+	}
+	gridY := chartH + 4 - 1 // the grid's top border rides the top row's bottom
+	chunks := m.panelChunks()
+	for r, chunk := range chunks {
+		x := 0
 		for n, i := range chunk {
-			if len(row) > 0 {
-				row = append(row, " ")
-			}
 			w := panelW
 			if n < rem {
 				w++
 			}
-			row = append(row, m.panelView(i, w, contentRows, panelTopN))
+			focused := !m.focusMode && i == m.focus-1
+			layers = append(layers,
+				layer(m.panelView(i, w, contentRows, panelTopN), x, gridY+r*(panelH-1), focused))
+			x += w - 1
 		}
-		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, row...))
 	}
-	return strings.Join(rows, "\n")
+	bodyH := gridY + len(chunks)*(panelH-1) + 1
+	return healBorders(lipgloss.NewCompositor(layers...).Render(), m.width, bodyH)
 }
 
 func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
