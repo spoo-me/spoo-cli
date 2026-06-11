@@ -162,7 +162,8 @@ func TestPanelFocusAndSelection(t *testing.T) {
 	}
 }
 
-// f promotes the focused panel; j/k walks the sidebar; x exits.
+// f promotes the focused panel. ↑/↓ moves rows in the main pane;
+// ←/→ switches panes, and in the sidebar ↑/↓ walks the charts.
 func TestFocusModePromotesAndCycles(t *testing.T) {
 	m := newStatsModel(t, "http://unused.invalid")
 	m, _ = statsKey(t, m, "tab") // focus panel 1 (browsers)
@@ -170,19 +171,52 @@ func TestFocusModePromotesAndCycles(t *testing.T) {
 	if !m.focusMode || m.focusItem != 2 { // item 0 = time chart, 2 = browsers
 		t.Fatalf("focusMode=%v item=%d, want focused browsers (2)", m.focusMode, m.focusItem)
 	}
+	if m.focusPane != 0 {
+		t.Fatalf("focusPane = %d, want main on entry", m.focusPane)
+	}
 	view := m.View().Content
 	for _, want := range []string{"✦ charts", "▸ browsers", "traffic over time", "Chrome"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("focus view missing %q", want)
 		}
 	}
+
+	// main pane: j moves the row selection, not the chart
+	m, _ = statsKey(t, m, "j")
+	if m.focusItem != 2 || m.sel[1] != 1 {
+		t.Fatalf("main-pane j: item=%d sel=%d, want item 2 / row 1", m.focusItem, m.sel[1])
+	}
+
+	// sidebar pane: j switches charts
+	m, _ = statsKey(t, m, "l")
+	if m.focusPane != 1 {
+		t.Fatalf("focusPane = %d, want sidebar after l", m.focusPane)
+	}
 	m, _ = statsKey(t, m, "j")
 	if m.focusItem != 3 {
-		t.Fatalf("focusItem = %d, want 3 after j", m.focusItem)
+		t.Fatalf("sidebar j: focusItem = %d, want 3", m.focusItem)
 	}
+
 	m, _ = statsKey(t, m, "x")
 	if m.focusMode {
 		t.Fatal("x did not exit focus mode")
+	}
+}
+
+// enter in the main pane drills down on the selected row.
+func TestFocusModeEnterDrills(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"scope":"all","summary":{"total_clicks":1},"metrics":{}}`))
+	}))
+	defer srv.Close()
+
+	m := newStatsModel(t, srv.URL)
+	m, _ = statsKey(t, m, "tab") // browsers
+	m, _ = statsKey(t, m, "f")
+	m, _ = statsKey(t, m, "j") // select Safari
+	m, cmd := statsKey(t, m, "enter")
+	if cmd == nil || len(m.filters) != 1 || m.filters[0] != (filterEntry{dim: "browser", value: "Safari"}) {
+		t.Fatalf("focus-mode drill failed: filters=%v", m.filters)
 	}
 }
 
@@ -264,7 +298,8 @@ func TestTableToggleIsPerPanel(t *testing.T) {
 func TestTableToggleInFocusMode(t *testing.T) {
 	m := newStatsModel(t, "http://unused.invalid")
 	m, _ = statsKey(t, m, "f")
-	m, _ = statsKey(t, m, "k") // wrap to item 0 = time chart? no: k from 1 goes to 0
+	m, _ = statsKey(t, m, "l") // sidebar pane
+	m, _ = statsKey(t, m, "k") // walk charts: item 1 → 0 (time chart)
 	if m.focusItem != 0 {
 		t.Fatalf("focusItem = %d, want 0 (time chart)", m.focusItem)
 	}
