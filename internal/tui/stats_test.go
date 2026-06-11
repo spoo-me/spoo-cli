@@ -330,6 +330,31 @@ func TestTableToggleIsPerPanel(t *testing.T) {
 	}
 }
 
+// p ghosts the previous window's series on the time chart.
+func TestPrevPeriodGhost(t *testing.T) {
+	m := newStatsModel(t, "http://unused.invalid")
+	m.prev = &api.StatsResponse{
+		Summary: api.StatsSummary{TotalClicks: 30},
+		Metrics: map[string][]map[string]any{
+			"clicks_by_time": {{"time": "2026-03-05", "clicks": 30.0}},
+		},
+	}
+	if strings.Contains(m.View().Content, "previous") {
+		t.Fatal("ghost legend should be off by default")
+	}
+	m, cmd := statsKey(t, m, "p")
+	if cmd != nil {
+		t.Fatal("toggling the ghost must not refetch — the data is already loaded")
+	}
+	if !m.showPrev || !strings.Contains(m.View().Content, "─── previous 90d") {
+		t.Fatalf("ghost legend missing (showPrev=%v)", m.showPrev)
+	}
+	m, _ = statsKey(t, m, "p")
+	if m.showPrev {
+		t.Fatal("second p should hide the ghost")
+	}
+}
+
 // e opens the export dialog; the filename extension picks the format
 // and esc closes without exporting.
 func TestExportModal(t *testing.T) {

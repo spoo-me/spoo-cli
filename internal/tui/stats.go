@@ -84,11 +84,12 @@ type StatsModel struct {
 	scope  string // all | anon
 	tz     string
 
-	win     timeWindow
-	offset  int // how many windows back in time ('[' / ']')
-	metric  string
-	filters []filterEntry
-	auto    bool
+	win      timeWindow
+	offset   int // how many windows back in time ('[' / ']')
+	metric   string
+	filters  []filterEntry
+	auto     bool
+	showPrev bool // ghost the previous window on the time chart ('p')
 
 	rangeMode bool // the 'T' range-expression strip is open
 	rangeBox  textinput.Model
@@ -437,6 +438,11 @@ func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		return m.openExport()
+	case "p":
+		m.showPrev = !m.showPrev
+		if m.showPrev && m.prev == nil {
+			m.status = ui.Dim.Render("no previous-window data yet")
+		}
 	case "?":
 		m.helper.ShowAll = !m.helper.ShowAll
 	case "r":
@@ -525,6 +531,11 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.auto = !m.auto
 		if m.auto {
 			return m, autoTick()
+		}
+	case "p":
+		m.showPrev = !m.showPrev
+		if m.showPrev && m.prev == nil {
+			m.status = ui.Dim.Render("no previous-window data yet")
 		}
 	case "?":
 		m.helper.ShowAll = !m.helper.ShowAll
@@ -663,8 +674,7 @@ func (m StatsModel) View() tea.View {
 			title += " · table"
 			chartBody = m.timeTableBody(chartBoxW-4, chartH+1)
 		} else {
-			legend := chartClicks.Render("─── clicks") + "  " + chartUnique.Render("─── unique")
-			chartBody = legend + "\n" + m.timeChart(chartBoxW-4, chartH)
+			chartBody = m.chartLegend() + "\n" + m.timeChart(chartBoxW-4, chartH)
 		}
 		top := lipgloss.JoinHorizontal(lipgloss.Top,
 			m.boxed("overview", m.overviewBody(), overviewW, chartH+4, false, ui.Accent),
@@ -873,6 +883,16 @@ func (m StatsModel) chartTitle() string {
 	return "traffic over time · " + m.win.label
 }
 
+// chartLegend names the time chart's series, including the previous-
+// period ghost while it's shown.
+func (m StatsModel) chartLegend() string {
+	legend := chartClicks.Render("─── clicks") + "  " + chartUnique.Render("─── unique")
+	if m.showPrev {
+		legend += "  " + ui.Dim.Render("─── previous "+m.win.label)
+	}
+	return legend
+}
+
 // metricHue is the pastel identity of the active metric; the time
 // panel's focus shades follow it (clicks sky, unique pink).
 func (m StatsModel) metricHue() color.Color {
@@ -944,6 +964,18 @@ func (m StatsModel) timeChart(width, height int) string {
 		return ui.Dim.Render("no activity in this window")
 	}
 
+	// the previous window's series, shifted forward one span so both
+	// periods share the x-axis — the ghost behind the current line
+	var prevSeries []tslc.TimePoint
+	if m.showPrev && m.prev != nil {
+		var prevMax float64
+		prevSeries, prevMax = toSeries(m.prev.Points("time", m.metric))
+		for i := range prevSeries {
+			prevSeries[i].Time = prevSeries[i].Time.Add(m.win.span)
+		}
+		maxV = max(maxV, prevMax) // a taller last period must not clip
+	}
+
 	// pad Y labels to the top value's width: ntcharts sizes the label
 	// gutter by sampling step labels and would clip a wider top label
 	yMax := niceCeil(maxV)
@@ -958,6 +990,12 @@ func (m StatsModel) timeChart(width, height int) string {
 		tslc.WithAxesStyles(ui.Dim, ui.Dim),
 		tslc.WithStyle(chartClicks),
 	)
+	if len(prevSeries) > 0 {
+		for _, tp := range prevSeries {
+			chart.PushDataSet("previous", tp)
+		}
+		chart.SetDataSetStyle("previous", ui.Dim)
+	}
 	if len(uniqueSeries) > 0 {
 		for _, tp := range uniqueSeries {
 			chart.PushDataSet("unique", tp)
@@ -1199,8 +1237,7 @@ func (m StatsModel) focusView() string {
 		if m.tableOn["time"] {
 			main = m.boxed(m.chartTitle()+" · table", m.timeTableBody(mainW-4, mainH-3), mainW, mainH, mainFocused, m.metricHue())
 		} else {
-			legend := chartClicks.Render("─── clicks") + "  " + chartUnique.Render("─── unique")
-			main = m.boxed(m.chartTitle(), legend+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, mainFocused, m.metricHue())
+			main = m.boxed(m.chartTitle(), m.chartLegend()+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, mainFocused, m.metricHue())
 		}
 	} else {
 		idx := m.focusItem - 1

@@ -59,11 +59,12 @@ func (statsDashKeys) FullHelp() [][]key.Binding {
 		},
 		{
 			bind("u", "clicks/unique"),
+			bind("p", "vs previous"),
 			bind("e", "export"),
 			bind("a", "auto-refresh"),
-			bind("r", "refresh"),
 		},
 		{
+			bind("r", "refresh"),
 			bind("?", "close help"),
 			bind("esc", "clear/quit"),
 			bind("q", "quit"),
@@ -101,10 +102,10 @@ func (statsFocusKeys) FullHelp() [][]key.Binding {
 			bind("u", "clicks/unique"),
 		},
 		{
+			bind("p", "vs previous"),
 			bind("e", "export"),
 			bind("r", "refresh"),
 			bind("x", "exit focus"),
-			bind("?", "close help"),
 		},
 	}
 }
