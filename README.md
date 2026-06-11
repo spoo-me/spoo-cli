@@ -35,6 +35,7 @@ Homebrew and Scoop packages are coming with the first tagged release.
 | `spoo keys` | API keys: `create` (token shown once), list, `revoke`. |
 | `spoo open <code>` | Open a short link in your browser. |
 | `spoo inspect <code>` | See where a link points **without** counting a click. |
+| `spoo qr <code>` | Render a link as a scannable QR code in the terminal (also `Q` in `spoo links`). |
 | `spoo auth login/logout/status`, `spoo whoami` | Account session. |
 
 `--json` on any command emits machine-readable output. Output is

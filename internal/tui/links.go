@@ -76,6 +76,7 @@ type LinksModel struct {
 	searching  bool
 	exportBox  exportModal
 	helper     help.Model // ? flips between short and full key help
+	qrURL      string     // non-empty: the QR dialog is up for this URL
 	showDetail bool       // detail pane open; it always reflects the selected row
 	stats      map[string]statsEntry
 	statsSeq   int // bumped on selection change; stale debounce ticks no-op
@@ -235,6 +236,9 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if m.qrURL != "" {
+			return m.updateQR(msg)
+		}
 		if m.exportBox.open {
 			return m.updateExport(msg)
 		}
@@ -281,6 +285,40 @@ func (m LinksModel) export(req exportRequest) tea.Cmd {
 		}
 		return actionMsg{note: "exported " + collapseHome(req.path), err: err}
 	}
+}
+
+// updateQR handles keys while the QR dialog is up.
+func (m LinksModel) updateQR(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "ctrl+c":
+		return m, tea.Quit
+	case "c":
+		if err := m.copyText(m.qrURL); err != nil {
+			m.status = ui.Err.Render("✗ copy failed: " + err.Error())
+		} else {
+			m.status = ui.OK.Render("✓ copied " + m.qrURL)
+		}
+		m.qrURL = ""
+	default: // any other key dismisses
+		m.qrURL = ""
+	}
+	return m, nil
+}
+
+// qrView is the QR dialog box; the host overlays it via overlayCenter.
+func (m LinksModel) qrView() string {
+	body := []string{
+		ui.Title.Render("✦ " + m.qrURL),
+		"",
+		ui.QR(m.qrURL, false),
+		"",
+		ui.KeyHint.Render("c copy url · any key closes"),
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(ui.Accent).
+		Padding(0, 2).
+		Render(strings.Join(body, "\n"))
 }
 
 // updateSearch handles keys while the search box is focused.
@@ -343,6 +381,11 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.exportBox, cmd = m.exportBox.show(defaultExportName("links", time.Now().Format("2006-01-02")))
 		return m, cmd
+	case "Q", "shift+q":
+		if it := m.selected(); it != nil {
+			m.qrURL = m.shortURL(it)
+		}
+		return m, nil
 	case "?":
 		m.helper.ShowAll = !m.helper.ShowAll
 		return m, nil
@@ -543,8 +586,12 @@ func (m LinksModel) View() tea.View {
 	}
 
 	content := b.String()
-	if m.exportBox.open {
+	switch {
+	case m.exportBox.open:
 		content = overlayCenter(content, m.exportBox.view(max(60, m.width)), max(60, m.width), max(20, m.height))
+	case m.qrURL != "":
+		h := max(m.height, lipgloss.Height(m.qrView())+2)
+		content = overlayCenter(content, m.qrView(), max(60, m.width), h)
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true

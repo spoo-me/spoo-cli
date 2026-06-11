@@ -142,9 +142,9 @@ func (linksKeys) FullHelp() [][]key.Binding {
 		},
 		{
 			bind("d", "delete (dd)"),
+			bind("Q", "qr code"),
 			bind("e", "export"),
 			bind("r", "refresh"),
-			bind("?", "close help"),
 		},
 	}
 }

@@ -395,3 +395,29 @@ func TestMiniSparkDownsamplesWholeSeries(t *testing.T) {
 		t.Fatalf("expected a full-height bucket for the spike: %q", got)
 	}
 }
+
+// Q pops a QR dialog for the selected link; c copies, anything closes.
+func TestQRDialog(t *testing.T) {
+	var copied string
+	m := newLinksModelWithPage(t, "http://unused.invalid")
+	m.copyText = func(s string) error { copied = s; return nil }
+
+	m, _ = pressKey(t, m, 'Q')
+	if m.qrURL == "" {
+		t.Fatal("Q should open the QR dialog for the selected link")
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "▄") || !strings.Contains(view, "first") {
+		t.Fatal("QR dialog should render the code and the URL")
+	}
+	m, _ = pressKey(t, m, 'c')
+	if m.qrURL != "" || !strings.Contains(copied, "/first") {
+		t.Fatalf("c should copy and close (copied=%q)", copied)
+	}
+
+	m, _ = pressKey(t, m, 'Q')
+	m, _ = pressKey(t, m, 'x')
+	if m.qrURL != "" {
+		t.Fatal("any key should dismiss the QR dialog")
+	}
+}
