@@ -139,8 +139,8 @@ func TestRangeCycleRefetches(t *testing.T) {
 		t.Fatalf("rangeDays = %d, cmd = %v; want 30 with refetch", m.rangeDays, cmd)
 	}
 	cmd()
-	if calls != 1 {
-		t.Fatalf("calls = %d", calls)
+	if calls != 2 { // current window + previous window (for deltas)
+		t.Fatalf("calls = %d, want 2", calls)
 	}
 	m, _ = statsKey(t, m, "t")
 	if m.rangeDays != 7 {

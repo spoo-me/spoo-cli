@@ -10,6 +10,12 @@ var (
 	Danger  = lipgloss.Color("#F87171")
 	Muted   = lipgloss.Color("#9CA3AF")
 
+	// pastel chart palette (one hue per dashboard panel)
+	Blue   = lipgloss.Color("#7DD3FC")
+	Yellow = lipgloss.Color("#FDE68A")
+	Pink   = lipgloss.Color("#F9A8D4")
+	Teal   = lipgloss.Color("#5EEAD4")
+
 	Title   = lipgloss.NewStyle().Bold(true).Foreground(Accent)
 	OK      = lipgloss.NewStyle().Bold(true).Foreground(Success)
 	Err     = lipgloss.NewStyle().Bold(true).Foreground(Danger)
