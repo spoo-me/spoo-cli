@@ -635,7 +635,7 @@ func (m StatsModel) chartHeight() int {
 		used++
 	}
 	rows := m.uniformRows()
-	used += len(m.panelChunks()) * (rows + 3 + gridGap) // cards + their row gap
+	used += len(m.panelChunks()) * (rows + 3)
 	return min(20, max(7, m.height-used-1))
 }
 
@@ -656,7 +656,7 @@ func (m StatsModel) View() tea.View {
 	default:
 		chartH := m.chartHeight()
 		overviewW := m.overviewWidth()
-		chartBoxW := m.width - overviewW - gridGap
+		chartBoxW := m.width - overviewW
 		chartFocused := !m.focusMode && m.focus == 0
 		title, chartBody := m.chartTitle(), ""
 		if m.tableOn["time"] {
@@ -966,17 +966,14 @@ func (m StatsModel) timeChart(width, height int) string {
 	return chart.View()
 }
 
-// gridGap is the padding between cards — the same count of blank
-// cells horizontally and vertically.
-const gridGap = 1
-
-// composeBody lays the whole dashboard body out as compositor layers:
-// distinct cards separated by gridGap blank cells in both directions.
+// composeBody lays the whole dashboard body out as compositor layers.
+// Cards stay distinct, with their borders directly adjacent — the
+// smallest gap that keeps every panel its own box. Layers carry an
+// incrementing z because the compositor's z-sort is not stable.
 func (m StatsModel) composeBody(overviewBox, chartBox string, chartH int) string {
 	cols := m.gridCols()
-	usable := m.width - (cols-1)*gridGap
-	panelW := usable / cols
-	rem := usable - panelW*cols
+	panelW := m.width / cols
+	rem := m.width - panelW*cols
 	contentRows := m.uniformRows()
 	panelH := contentRows + 3
 
@@ -988,10 +985,11 @@ func (m StatsModel) composeBody(overviewBox, chartBox string, chartH int) string
 
 	layers := []*lipgloss.Layer{
 		layer(overviewBox, 0, 0),
-		layer(chartBox, m.overviewWidth()+gridGap, 0),
+		layer(chartBox, m.overviewWidth(), 0),
 	}
-	gridY := chartH + 4 + gridGap
-	for r, chunk := range m.panelChunks() {
+	gridY := chartH + 4
+	chunks := m.panelChunks()
+	for r, chunk := range chunks {
 		x := 0
 		for n, i := range chunk {
 			w := panelW
@@ -999,8 +997,8 @@ func (m StatsModel) composeBody(overviewBox, chartBox string, chartH int) string
 				w++
 			}
 			layers = append(layers,
-				layer(m.panelView(i, w, contentRows, panelTopN), x, gridY+r*(panelH+gridGap)))
-			x += w + gridGap
+				layer(m.panelView(i, w, contentRows, panelTopN), x, gridY+r*panelH))
+			x += w
 		}
 	}
 	return lipgloss.NewCompositor(layers...).Render()
