@@ -2,7 +2,13 @@
 // so CLI output and future TUI views render with one visual language.
 package ui
 
-import lipgloss "charm.land/lipgloss/v2"
+import (
+	"image/color"
+	"math"
+	"strings"
+
+	lipgloss "charm.land/lipgloss/v2"
+)
 
 var (
 	Accent  = lipgloss.Color("#A78BFA") // spoo violet
@@ -26,6 +32,28 @@ var (
 
 // SparkRunes are the eight block heights used for sparkline charts.
 var SparkRunes = []rune("▁▂▃▄▅▆▇█")
+
+// Bar renders a horizontal capped-line bar (╺━━╸) on a dashed track,
+// scaled to value/maxV over width columns.
+func Bar(value, maxV float64, width int, c color.Color) string {
+	if width < 2 {
+		width = 2
+	}
+	w := 0
+	if maxV > 0 && value > 0 {
+		w = max(1, int(math.Round(value/maxV*float64(width))))
+	}
+	fill := lipgloss.NewStyle().Foreground(c)
+	track := Dim.Render(strings.Repeat("╌", width-w))
+	switch w {
+	case 0:
+		return Dim.Render(strings.Repeat("╌", width))
+	case 1:
+		return fill.Render("╺") + track
+	default:
+		return fill.Render("╺"+strings.Repeat("━", w-2)+"╸") + track
+	}
+}
 
 // CountryLabel normalizes country codes for display. The backend
 // reports unknown geo as "XX"; everything else passes through as the

@@ -841,12 +841,6 @@ func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
 	for i, pt := range pts {
 		label := padToWidth(truncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
 
-		barW := 0
-		if maxV > 0 && pt.Value > 0 {
-			barW = max(1, int(math.Round(pt.Value/maxV*float64(barMax))))
-		}
-		barColor := lipgloss.NewStyle().Foreground(entityColor(pt.Label, panelHue))
-
 		count := fmt.Sprintf("%5.0f", pt.Value)
 		pct := "     "
 		if total > 0 {
@@ -858,7 +852,7 @@ func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
 			marker, labelStyle = ui.Title.Render("▸ "), ui.Title
 		}
 		lines = append(lines, marker+labelStyle.Render(label)+" "+
-			barColor.Render(strings.Repeat("█", barW))+ui.Dim.Render(strings.Repeat("·", barMax-barW))+
+			ui.Bar(pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
 			count+ui.Dim.Render(pct))
 	}
 	return m.boxed(p.title, strings.Join(lines, "\n"), width, contentRows+3, focused)
@@ -925,18 +919,13 @@ func (m StatsModel) focusPanelBody(idx, width int) string {
 	lines := make([]string, 0, len(pts))
 	for _, pt := range pts {
 		label := padToWidth(truncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
-		barW := 0
-		if maxV > 0 && pt.Value > 0 {
-			barW = max(1, int(math.Round(pt.Value/maxV*float64(barMax))))
-		}
-		barColor := lipgloss.NewStyle().Foreground(entityColor(pt.Label, panelHue))
 		count := fmt.Sprintf("%5.0f", pt.Value)
 		pct := "     "
 		if total > 0 {
 			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)
 		}
 		lines = append(lines, label+" "+
-			barColor.Render(strings.Repeat("█", barW))+ui.Dim.Render(strings.Repeat("·", barMax-barW))+
+			ui.Bar(pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
 			count+ui.Dim.Render(pct))
 	}
 	return strings.Join(lines, "\n")
