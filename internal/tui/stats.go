@@ -33,17 +33,9 @@ var rangeCycle = []int{90, 30, 7, 1}
 
 type panelDef struct{ key, title string }
 
-// panelBarStyles temporarily assigns a different bar style per panel so
-// the candidates can be compared on live data before finalizing one.
-var panelBarStyles = map[string]ui.BarStyle{
-	"short_code": ui.BarCapped,
-	"browser":    ui.BarUpperHalf,
-	"os":         ui.BarSegmented,
-	"country":    ui.BarDoubleLine,
-	"city":       ui.BarFade,
-	"referrer":   ui.BarHalf,
-	"weekday":    ui.BarCapped,
-}
+// dashBarStyle is the bar style used across the dashboard (picked from
+// a live A/B of six candidates).
+const dashBarStyle = ui.BarUpperHalf
 
 // panelColors gives every panel its own pastel hue (entity brand
 // colors in colors.go override per row where known).
@@ -864,7 +856,7 @@ func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
 			marker, labelStyle = ui.Title.Render("▸ "), ui.Title
 		}
 		lines = append(lines, marker+labelStyle.Render(label)+" "+
-			ui.Bar(panelBarStyles[p.key], pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
+			ui.Bar(dashBarStyle, pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
 			count+ui.Dim.Render(pct))
 	}
 	return m.boxed(p.title, strings.Join(lines, "\n"), width, contentRows+3, focused)
@@ -937,7 +929,7 @@ func (m StatsModel) focusPanelBody(idx, width int) string {
 			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)
 		}
 		lines = append(lines, label+" "+
-			ui.Bar(panelBarStyles[p.key], pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
+			ui.Bar(dashBarStyle, pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
 			count+ui.Dim.Render(pct))
 	}
 	return strings.Join(lines, "\n")
