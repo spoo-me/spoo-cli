@@ -2,3 +2,4 @@
 /dist/
 *.test
 coverage.out
+/catalogue/

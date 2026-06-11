@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	tslc "github.com/NimbleMarkets/ntcharts/v2/linechart/timeserieslinechart"
@@ -827,7 +826,7 @@ func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
 	innerW := width - 4 // border-box width minus borders and padding
 
 	if m.tableOn[p.key] {
-		return m.boxed(p.title, m.panelTableBody(idx, innerW, contentRows, topN, focused),
+		return m.boxed(p.title, m.panelTableBody(idx, innerW, contentRows, topN, focused, false, false),
 			width, contentRows+3, focused)
 	}
 
@@ -898,20 +897,21 @@ var columnTitle = map[string]string{
 	"weekday":    "weekday",
 }
 
-// dashTableStyles adapts the bubbles table to the dashboard look.
-func dashTableStyles(focused bool) table.Styles {
-	st := table.DefaultStyles()
-	st.Header = lipgloss.NewStyle().Bold(true).Foreground(ui.Muted)
-	st.Cell = lipgloss.NewStyle()
-	st.Selected = lipgloss.NewStyle()
-	if focused {
-		st.Selected = lipgloss.NewStyle().Bold(true).Foreground(ui.Accent)
-	}
-	return st
+// panelTableStyles temporarily assigns a different table style per
+// panel so the candidates can be compared on live data.
+var panelTableStyles = map[string]tableStyle{
+	"short_code": tsSelectedBand,
+	"browser":    tsZebra,
+	"os":         tsHeaderBand,
+	"country":    tsASCII,
+	"city":       tsTree,
+	"referrer":   tsDotted,
+	"weekday":    tsUnderline,
 }
 
-// panelTableBody renders a panel's data as a bubbles table.
-func (m StatsModel) panelTableBody(idx, innerW, height, topN int, focused bool) string {
+// panelTableBody renders a panel's data as a styled table. withRank
+// adds a leaderboard # column and withTotals a Σ footer (focus mode).
+func (m StatsModel) panelTableBody(idx, innerW, height, topN int, focused, withRank, withTotals bool) string {
 	p := m.panels()[idx]
 	pts := m.panelPoints(idx, topN)
 	if len(pts) == 0 {
@@ -928,37 +928,61 @@ func (m StatsModel) panelTableBody(idx, innerW, height, topN int, focused bool) 
 	if m.metric == "unique_clicks" {
 		metricCol = "unique"
 	}
-	cols := []table.Column{
-		{Title: columnTitle[p.key], Width: max(10, innerW-22)},
-		{Title: metricCol, Width: 9},
-		{Title: "share", Width: 9},
+
+	header := []string{columnTitle[p.key], metricCol, "share"}
+	widths := []int{max(10, innerW-22), 8, 8}
+	if withRank {
+		header = append([]string{"#"}, header...)
+		widths = append([]int{3}, widths...)
+		widths[1] = max(10, widths[1]-4)
 	}
-	rows := make([]table.Row, 0, len(pts))
-	for _, pt := range pts {
+	var sum float64
+	rows := make([][]string, 0, len(pts))
+	for i, pt := range pts {
+		sum += pt.Value
 		share := ""
 		if total > 0 {
 			share = fmt.Sprintf("%.1f%%", pt.Value/total*100)
 		}
-		rows = append(rows, table.Row{
-			m.rowLabel(p.key, pt.Label), fmt.Sprintf("%.0f", pt.Value), share,
-		})
+		row := []string{m.rowLabel(p.key, pt.Label), fmt.Sprintf("%.0f", pt.Value), share}
+		if withRank {
+			row = append([]string{fmt.Sprintf("%d", i+1)}, row...)
+		}
+		rows = append(rows, row)
 	}
-	tbl := table.New(
-		table.WithColumns(cols),
-		table.WithRows(rows),
-		table.WithWidth(innerW),
-		table.WithHeight(max(1, height-1)),
-		table.WithFocused(focused),
-	)
-	tbl.SetStyles(dashTableStyles(focused))
+
+	sel := -1
 	if focused {
-		tbl.SetCursor(min(m.sel[idx], len(rows)-1))
+		sel = min(m.sel[idx], len(rows)-1)
 	}
-	return tbl.View()
+	out := styledTable(panelTableStyles[p.key], widths, header, rows, sel, height-2, innerW)
+
+	if withTotals && total > 0 {
+		totalsRow := []string{"Σ", fmt.Sprintf("%.0f", sum), fmt.Sprintf("%.1f%%", sum/total*100)}
+		if withRank {
+			totalsRow = append([]string{""}, totalsRow...)
+		}
+		out += "\n" + ui.Dim.Render(strings.Repeat("─", min(innerW, 40))) +
+			"\n" + tsHeader.Render(styledTotals(widths, totalsRow))
+	}
+	return out
+}
+
+// styledTotals formats a totals row with the same column widths.
+func styledTotals(widths []int, cells []string) string {
+	parts := make([]string, len(cells))
+	for i, c := range cells {
+		if i == 0 {
+			parts[i] = padToWidth(truncateToWidth(c, widths[i]), widths[i])
+		} else {
+			parts[i] = fmt.Sprintf("%*s", widths[i], c)
+		}
+	}
+	return " " + strings.Join(parts, " ")
 }
 
 // timeTableBody renders the time series as a table (focus mode),
-// most recent bucket first.
+// most recent bucket first, with a Σ footer.
 func (m StatsModel) timeTableBody(innerW, height int) string {
 	clicks := m.res.Points("time", "clicks")
 	if len(clicks) == 0 {
@@ -968,26 +992,22 @@ func (m StatsModel) timeTableBody(innerW, height int) string {
 	for _, p := range m.res.Points("time", "unique_clicks") {
 		uniq[p.Label] = p.Value
 	}
-	cols := []table.Column{
-		{Title: "time", Width: max(12, innerW-24)},
-		{Title: "clicks", Width: 10},
-		{Title: "unique", Width: 10},
-	}
-	rows := make([]table.Row, 0, len(clicks))
+	header := []string{"time", "clicks", "unique"}
+	widths := []int{max(12, innerW-24), 10, 10}
+	var sumC, sumU float64
+	rows := make([][]string, 0, len(clicks))
 	for i := len(clicks) - 1; i >= 0; i-- {
 		p := clicks[i]
-		rows = append(rows, table.Row{
+		sumC += p.Value
+		sumU += uniq[p.Label]
+		rows = append(rows, []string{
 			p.Label, fmt.Sprintf("%.0f", p.Value), fmt.Sprintf("%.0f", uniq[p.Label]),
 		})
 	}
-	tbl := table.New(
-		table.WithColumns(cols),
-		table.WithRows(rows),
-		table.WithWidth(innerW),
-		table.WithHeight(max(1, height-1)),
-	)
-	tbl.SetStyles(dashTableStyles(false))
-	return tbl.View()
+	out := styledTable(tsUnderline, widths, header, rows, -1, height-4, innerW)
+	out += "\n" + ui.Dim.Render(strings.Repeat("─", min(innerW, 40))) +
+		"\n" + tsHeader.Render(styledTotals(widths, []string{"Σ", fmt.Sprintf("%.0f", sumC), fmt.Sprintf("%.0f", sumU)}))
+	return out
 }
 
 // ── focus mode ────────────────────────────────────────────────────────
@@ -1013,7 +1033,7 @@ func (m StatsModel) focusView() string {
 		idx := m.focusItem - 1
 		body := m.focusPanelBody(idx, mainW)
 		if m.tableOn[m.panels()[idx].key] {
-			body = m.panelTableBody(idx, mainW-4, mainH-3, focusTopN, false)
+			body = m.panelTableBody(idx, mainW-4, mainH-3, focusTopN, false, true, true)
 		}
 		main = m.boxed(m.panels()[idx].title, body, mainW, mainH, true)
 	}
