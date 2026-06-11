@@ -326,10 +326,10 @@ func (m StatsModel) metricTotal() float64 {
 
 // ── layout ────────────────────────────────────────────────────────────
 
-// overviewWidth scales the overview panel with the terminal (~20% of
+// overviewWidth scales the overview panel with the terminal (~25% of
 // the width) instead of pinching it on wide screens.
 func (m StatsModel) overviewWidth() int {
-	return min(48, max(32, m.width/5))
+	return min(56, max(32, m.width/4))
 }
 
 func (m StatsModel) gridCols() int {
@@ -475,7 +475,7 @@ func (m StatsModel) boxed(title, body string, width, height int, focused bool) s
 
 func (m StatsModel) overviewBody() string {
 	s := m.res.Summary
-	labelW := min(16, max(13, m.overviewWidth()-18))
+	labelW := min(20, max(13, m.overviewWidth()-20))
 	row := func(label, value string, style lipgloss.Style) string {
 		return ui.Dim.Render(padToWidth(label, labelW)) + style.Render(value)
 	}
