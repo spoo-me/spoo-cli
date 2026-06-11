@@ -34,10 +34,10 @@ func (statsDashKeys) ShortHelp() []key.Binding {
 		bind("↑↓←→", "navigate"),
 		bind("enter", "drill down"),
 		bind("f", "focus"),
+		bind("g", "switch link"),
 		bind("t", "table"),
 		bind("T", "range"),
 		bind("u", "metric"),
-		bind("e", "export"),
 		bind("?", "more"),
 		bind("q", "quit"),
 	}
@@ -53,6 +53,7 @@ func (statsDashKeys) FullHelp() [][]key.Binding {
 		},
 		{
 			bind("f", "focus mode"),
+			bind("g", "switch link"),
 			bind("t", "table view"),
 			bind("T", "time range"),
 			bind("[/]", "older/newer"),

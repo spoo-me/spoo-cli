@@ -98,6 +98,11 @@ type StatsModel struct {
 	exportBox exportModal
 	helper    help.Model // ? flips between short and full key help
 
+	switchMode bool // the 'g' link picker is up
+	switchBox  textinput.Model
+	switchAll  []api.URLItem // fetched once, cached for the session
+	switchSel  int           // 0 = "all links", 1.. = filtered items
+
 	res      *api.StatsResponse
 	prev     *api.StatsResponse
 	fetchErr error
@@ -119,6 +124,9 @@ func NewStats(client *api.Client, target, scope, tz string) StatsModel {
 	rangeBox := textinput.New()
 	rangeBox.Placeholder = "type a range…"
 	rangeBox.SetWidth(36) // fits "2026-01-01 to 2026-02-15" with room; keeps the cheat-sheet column still
+	switchBox := textinput.New()
+	switchBox.Placeholder = "alias or destination…"
+	switchBox.SetWidth(32)
 	return StatsModel{
 		client:    client,
 		target:    target,
@@ -126,6 +134,7 @@ func NewStats(client *api.Client, target, scope, tz string) StatsModel {
 		tz:        tz,
 		win:       defaultWindow,
 		rangeBox:  rangeBox,
+		switchBox: switchBox,
 		exportBox: newExportModal(),
 		helper:    newHelp(),
 		metric:    "clicks",
@@ -310,10 +319,22 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = true
 		return m, tea.Batch(m.fetch(), autoTick())
 
+	case linksListMsg:
+		if msg.err != nil {
+			m.switchMode = false
+			m.status = ui.Err.Render("✗ couldn't list links: " + msg.err.Error())
+			return m, nil
+		}
+		m.switchAll = msg.items
+		return m, nil
+
 	case tea.KeyPressMsg:
 		m.status = ""
 		if m.exportBox.open {
 			return m.updateExport(msg)
+		}
+		if m.switchMode {
+			return m.updateSwitcher(msg)
 		}
 		if m.rangeMode {
 			return m.updateRange(msg)
@@ -438,6 +459,8 @@ func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		return m.openExport()
+	case "g":
+		return m.openSwitcher()
 	case "p":
 		m.showPrev = !m.showPrev
 		if m.showPrev && m.prev == nil {
@@ -532,6 +555,8 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.auto {
 			return m, autoTick()
 		}
+	case "g":
+		return m.openSwitcher()
 	case "p":
 		m.showPrev = !m.showPrev
 		if m.showPrev && m.prev == nil {
@@ -710,8 +735,11 @@ func (m StatsModel) View() tea.View {
 	}
 
 	content := b.String()
-	if m.exportBox.open {
+	switch {
+	case m.exportBox.open:
 		content = overlayCenter(content, m.exportBox.view(m.width), m.width, m.height)
+	case m.switchMode:
+		content = overlayCenter(content, m.switcherView(), m.width, m.height)
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true

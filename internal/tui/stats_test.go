@@ -330,6 +330,71 @@ func TestTableToggleIsPerPanel(t *testing.T) {
 	}
 }
 
+// g opens the link picker; choosing a link re-targets the dashboard.
+func TestLinkSwitcher(t *testing.T) {
+	var gotCode string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/urls") {
+			w.Write([]byte(`{"items":[{"alias":"launch","long_url":"https://a.com","total_clicks":60},{"alias":"promo","long_url":"https://b.com","total_clicks":40}],"page":1,"pageSize":100,"total":2}`))
+			return
+		}
+		gotCode = r.URL.Query().Get("short_code")
+		w.Write([]byte(`{"scope":"all","summary":{"total_clicks":1},"metrics":{}}`))
+	}))
+	defer srv.Close()
+
+	m := newStatsModel(t, srv.URL)
+	m, cmd := statsKey(t, m, "g")
+	if !m.switchMode || cmd == nil {
+		t.Fatal("g should open the picker and fetch the link list")
+	}
+	// deliver the list (the Focus and list cmds are batched; run the batch)
+	for _, msg := range drainCmd(cmd) {
+		next, _ := m.Update(msg)
+		m = next.(StatsModel)
+	}
+	if len(m.switchAll) != 2 {
+		t.Fatalf("switchAll = %d items, want 2", len(m.switchAll))
+	}
+
+	// type "pro" to filter, ↓ to the only match, enter to switch
+	for _, ch := range []string{"p", "r", "o"} {
+		m, _ = statsKey(t, m, ch)
+	}
+	m, _ = statsKey(t, m, "down")
+	m, cmd = statsKey(t, m, "enter")
+	if m.switchMode || m.target != "promo" || cmd == nil {
+		t.Fatalf("switch failed: mode=%v target=%q", m.switchMode, m.target)
+	}
+	cmd()
+	if gotCode != "promo" {
+		t.Fatalf("short_code param = %q, want promo", gotCode)
+	}
+
+	// esc just closes without switching
+	m, _ = statsKey(t, m, "g")
+	m, _ = statsKey(t, m, "esc")
+	if m.switchMode || m.target != "promo" {
+		t.Fatal("esc should close the picker and keep the target")
+	}
+}
+
+// drainCmd runs a command (flattening batches) and returns its messages.
+func drainCmd(cmd tea.Cmd) []tea.Msg {
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		var out []tea.Msg
+		for _, c := range batch {
+			out = append(out, drainCmd(c)...)
+		}
+		return out
+	}
+	return []tea.Msg{msg}
+}
+
 // p ghosts the previous window's series on the time chart.
 func TestPrevPeriodGhost(t *testing.T) {
 	m := newStatsModel(t, "http://unused.invalid")
