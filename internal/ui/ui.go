@@ -27,16 +27,13 @@ var (
 // SparkRunes are the eight block heights used for sparkline charts.
 var SparkRunes = []rune("▁▂▃▄▅▆▇█")
 
-// CountryLabel renders an ISO alpha-2 country code with its flag emoji
-// (regional indicator pairs). The backend reports unknown geo as "XX",
-// which has no flag.
+// CountryLabel normalizes country codes for display. The backend
+// reports unknown geo as "XX"; everything else passes through as the
+// plain ISO alpha-2 code (no emoji — flag glyph support is too uneven
+// across terminal fonts).
 func CountryLabel(code string) string {
 	if code == "XX" {
 		return "Unknown" // match the backend's casing for unknown cities
 	}
-	if len(code) != 2 || code[0] < 'A' || code[0] > 'Z' || code[1] < 'A' || code[1] > 'Z' {
-		return code
-	}
-	flag := string(rune(0x1F1E6+int(code[0]-'A'))) + string(rune(0x1F1E6+int(code[1]-'A')))
-	return flag + " " + code
+	return code
 }

@@ -26,6 +26,7 @@ func testStatsResponse() *api.StatsResponse {
 				{"time": "2026-06-01", "clicks": 60.0},
 				{"time": "2026-06-02", "clicks": 40.0},
 			},
+			"clicks_by_short_code":     {{"short_code": "launch", "clicks": 60.0}, {"short_code": "promo", "clicks": 40.0}},
 			"clicks_by_browser":        {{"browser": "Chrome", "clicks": 70.0}, {"browser": "Safari", "clicks": 30.0}},
 			"unique_clicks_by_browser": {{"browser": "Safari", "unique_clicks": 25.0}, {"browser": "Chrome", "unique_clicks": 15.0}},
 			"clicks_by_os":             {{"os": "Windows", "clicks": 100.0}},
@@ -67,8 +68,8 @@ func TestDashboardRendersAllSections(t *testing.T) {
 	view := m.View().Content
 	for _, want := range []string{
 		"spoo stats", "✦ overview", "clicks", "unique", "avg redirect", "88ms",
-		"✦ browsers", "✦ operating systems", "✦ countries", "✦ cities", "✦ referrers",
-		"Chrome", "🇮🇳 IN", "Pune", "twitter.com", "2026-03-12",
+		"✦ top links", "✦ browsers", "✦ operating systems", "✦ countries", "✦ cities", "✦ referrers",
+		"launch", "Chrome", "Pune", "twitter.com", "2026-03-12",
 		"70%", // percentage column: Chrome 70 of 100 clicks
 	} {
 		if !strings.Contains(view, want) {
@@ -78,24 +79,24 @@ func TestDashboardRendersAllSections(t *testing.T) {
 }
 
 func TestDrillDownAddsServerSideFilter(t *testing.T) {
-	var gotBrowser string
+	var gotCode string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotBrowser = r.URL.Query().Get("browser")
+		gotCode = r.URL.Query().Get("short_code")
 		w.Write([]byte(`{"scope":"all","summary":{"total_clicks":70},"metrics":{}}`))
 	}))
 	defer srv.Close()
 
-	m := newStatsModel(t, srv.URL) // focus 0 = Browsers, selection 0 = Chrome
+	m := newStatsModel(t, srv.URL) // focus 0 = top links, selection 0 = launch
 	m, cmd := statsKey(t, m, "enter")
-	if len(m.filters) != 1 || m.filters[0] != (filterEntry{dim: "browser", value: "Chrome"}) {
+	if len(m.filters) != 1 || m.filters[0] != (filterEntry{dim: "short_code", value: "launch"}) {
 		t.Fatalf("filters = %+v", m.filters)
 	}
 	if cmd == nil {
 		t.Fatal("drill-down did not refetch")
 	}
 	cmd()
-	if gotBrowser != "Chrome" {
-		t.Fatalf("browser param = %q, want Chrome", gotBrowser)
+	if gotCode != "launch" {
+		t.Fatalf("short_code param = %q, want launch", gotCode)
 	}
 
 	// 'x' removes the filter and refetches unfiltered
@@ -104,8 +105,8 @@ func TestDrillDownAddsServerSideFilter(t *testing.T) {
 		t.Fatalf("x did not undo the filter (filters=%v cmd=%v)", m.filters, cmd)
 	}
 	cmd()
-	if gotBrowser != "" {
-		t.Fatalf("browser param after undo = %q, want empty", gotBrowser)
+	if gotCode != "" {
+		t.Fatalf("short_code param after undo = %q, want empty", gotCode)
 	}
 }
 
@@ -119,7 +120,7 @@ func TestMetricToggleDoesNotRefetch(t *testing.T) {
 		t.Fatalf("metric = %q", m.metric)
 	}
 	// panels re-rank by the new metric: Safari leads unique_clicks
-	pts := m.panelPoints(0)
+	pts := m.panelPoints(1, panelTopN) // panel 1 = browsers
 	if pts[0].Label != "Safari" {
 		t.Fatalf("top browser by unique = %q, want Safari", pts[0].Label)
 	}
@@ -151,12 +152,64 @@ func TestRangeCycleRefetches(t *testing.T) {
 func TestPanelFocusAndSelection(t *testing.T) {
 	m := newStatsModel(t, "http://unused.invalid")
 	m, _ = statsKey(t, m, "tab")
-	if m.focus != 1 {
-		t.Fatalf("focus = %d, want 1 (OS)", m.focus)
+	m, _ = statsKey(t, m, "tab")
+	if m.focus != 2 {
+		t.Fatalf("focus = %d, want 2 (OS)", m.focus)
 	}
 	m, _ = statsKey(t, m, "j")
-	if m.sel[1] != 0 { // OS panel has one row; selection clamps
-		t.Fatalf("sel = %d, want clamped 0", m.sel[1])
+	if m.sel[2] != 0 { // OS panel has one row; selection clamps
+		t.Fatalf("sel = %d, want clamped 0", m.sel[2])
+	}
+}
+
+// f promotes the focused panel; j/k walks the sidebar; x exits.
+func TestFocusModePromotesAndCycles(t *testing.T) {
+	m := newStatsModel(t, "http://unused.invalid")
+	m, _ = statsKey(t, m, "tab") // focus panel 1 (browsers)
+	m, _ = statsKey(t, m, "f")
+	if !m.focusMode || m.focusItem != 2 { // item 0 = time chart, 2 = browsers
+		t.Fatalf("focusMode=%v item=%d, want focused browsers (2)", m.focusMode, m.focusItem)
+	}
+	view := m.View().Content
+	for _, want := range []string{"✦ charts", "▸ browsers", "traffic over time", "Chrome"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("focus view missing %q", want)
+		}
+	}
+	m, _ = statsKey(t, m, "j")
+	if m.focusItem != 3 {
+		t.Fatalf("focusItem = %d, want 3 after j", m.focusItem)
+	}
+	m, _ = statsKey(t, m, "x")
+	if m.focusMode {
+		t.Fatal("x did not exit focus mode")
+	}
+}
+
+// [ pages the window back in time and refetches; ] returns forward.
+func TestWindowPaging(t *testing.T) {
+	var gotStart, gotEnd string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("group_by") != "time" { // ignore the prev-window probe
+			gotStart = r.URL.Query().Get("start_date")
+			gotEnd = r.URL.Query().Get("end_date")
+		}
+		w.Write([]byte(`{"scope":"all","summary":{"total_clicks":1},"metrics":{}}`))
+	}))
+	defer srv.Close()
+
+	m := newStatsModel(t, srv.URL)
+	m, cmd := statsKey(t, m, "[")
+	if m.offset != 1 || cmd == nil {
+		t.Fatalf("offset = %d, want 1 with refetch", m.offset)
+	}
+	cmd()
+	if gotStart == "" || gotEnd == "" {
+		t.Fatal("paged-back window must send both start_date and end_date")
+	}
+	m, _ = statsKey(t, m, "]")
+	if m.offset != 0 {
+		t.Fatalf("offset = %d, want 0 after ]", m.offset)
 	}
 }
 

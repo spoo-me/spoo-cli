@@ -372,7 +372,7 @@ func TestDetailRendersAnalytics(t *testing.T) {
 	}})
 	m = next.(LinksModel)
 	view := m.View().Content
-	for _, want := range []string{"analytics", "4 of 10 clicks", "Chrome", "(90%)", "Windows", "🇮🇳 IN", "42ms"} {
+	for _, want := range []string{"analytics", "4 of 10 clicks", "Chrome", "(90%)", "Windows", "top country", "42ms"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("analytics section missing %q:\n%s", want, view)
 		}

@@ -20,34 +20,29 @@ import (
 
 const (
 	panelTopN    = 6
+	focusTopN    = 24 // rows shown for a panel promoted to focus mode
 	twoColMin    = 96
 	threeColMin  = 140
 	defaultRange = 90
+	sidebarW     = 30 // focus-mode sidebar width
 	autoEvery    = 30 * time.Second
 )
 
 // rangeCycle is the windows the 't' key steps through (days).
-var rangeCycle = []int{90, 30, 7}
+var rangeCycle = []int{90, 30, 7, 1}
 
-// dashPanels are the breakdown panels in display and focus order.
-// weekday is synthetic (derived from the time series) and not drillable.
-var dashPanels = []struct{ key, title string }{
-	{"browser", "browsers"},
-	{"os", "operating systems"},
-	{"country", "countries"},
-	{"city", "cities"},
-	{"referrer", "referrers"},
-	{"weekday", "weekdays"},
-}
+type panelDef struct{ key, title string }
 
-// panelColors gives every panel its own pastel hue.
+// panelColors gives every panel its own pastel hue (entity brand
+// colors in colors.go override per row where known).
 var panelColors = map[string]color.Color{
-	"browser":  ui.Success,
-	"os":       ui.Blue,
-	"country":  ui.Yellow,
-	"city":     ui.Pink,
-	"referrer": ui.Teal,
-	"weekday":  ui.Accent,
+	"short_code": ui.Accent,
+	"browser":    ui.Success,
+	"os":         ui.Blue,
+	"country":    ui.Yellow,
+	"city":       ui.Pink,
+	"referrer":   ui.Teal,
+	"weekday":    ui.Accent,
 }
 
 type statsLoadedMsg struct {
@@ -69,8 +64,8 @@ type filterEntry struct {
 }
 
 // StatsModel is the full-screen analytics dashboard: overview with
-// period deltas, a dual-series time chart, and focusable breakdown
-// panels with server-side drill-down.
+// period deltas, a dual-series time chart, focusable breakdown panels
+// with server-side drill-down, window paging, and a focus mode.
 type StatsModel struct {
 	client *api.Client
 	target string // short code, or "" for account-wide
@@ -78,17 +73,21 @@ type StatsModel struct {
 	tz     string
 
 	rangeDays int
-	metric    string // clicks | unique_clicks
+	offset    int // how many windows back in time ('[' / ']')
+	metric    string
 	filters   []filterEntry
-	auto      bool // periodic refresh
+	auto      bool
 
 	res      *api.StatsResponse
 	prev     *api.StatsResponse
 	fetchErr error
 	loading  bool
-	status   string      // transient message (export results etc.)
-	focus    int         // index into dashPanels
+	status   string
+	focus    int         // index into panels()
 	sel      map[int]int // per-panel selection row
+
+	focusMode bool
+	focusItem int // 0 = time chart, 1.. = panels()[focusItem-1]
 
 	width  int
 	height int
@@ -109,17 +108,51 @@ func NewStats(client *api.Client, target, scope, tz string) StatsModel {
 	}
 }
 
+// panels returns the breakdown panels for the current view. Account-
+// wide gets the drillable top-links leaderboard first; a single link
+// gets the weekday distribution instead.
+func (m StatsModel) panels() []panelDef {
+	if m.target == "" {
+		return []panelDef{
+			{"short_code", "top links"},
+			{"browser", "browsers"},
+			{"os", "operating systems"},
+			{"country", "countries"},
+			{"city", "cities"},
+			{"referrer", "referrers"},
+		}
+	}
+	return []panelDef{
+		{"browser", "browsers"},
+		{"os", "operating systems"},
+		{"country", "countries"},
+		{"city", "cities"},
+		{"referrer", "referrers"},
+		{"weekday", "weekdays"},
+	}
+}
+
 func (m StatsModel) Init() tea.Cmd { return m.fetch() }
 
 // query builds the stats request for the current dashboard state.
 func (m StatsModel) query() api.StatsQuery {
+	now := time.Now().UTC()
+	end := now.AddDate(0, 0, -m.offset*m.rangeDays)
+	start := end.AddDate(0, 0, -m.rangeDays)
+	groupBy := []string{"time", "browser", "os", "country", "city", "referrer"}
+	if m.target == "" {
+		groupBy = append(groupBy, "short_code")
+	}
 	q := api.StatsQuery{
 		Scope:     m.scope,
 		ShortCode: m.target,
-		StartDate: time.Now().UTC().AddDate(0, 0, -m.rangeDays).Format(time.RFC3339),
+		StartDate: start.Format(time.RFC3339),
 		Timezone:  m.tz,
-		GroupBy:   []string{"time", "browser", "os", "country", "city", "referrer"},
+		GroupBy:   groupBy,
 		Filters:   map[string][]string{},
+	}
+	if m.offset > 0 {
+		q.EndDate = end.Format(time.RFC3339)
 	}
 	for _, f := range m.filters {
 		q.Filters[f.dim] = append(q.Filters[f.dim], f.value)
@@ -135,8 +168,8 @@ func (m StatsModel) fetch() tea.Cmd {
 	prevQ := q
 	prevQ.GroupBy = []string{"time"}
 	now := time.Now().UTC()
-	prevQ.StartDate = now.AddDate(0, 0, -2*m.rangeDays).Format(time.RFC3339)
-	prevQ.EndDate = now.AddDate(0, 0, -m.rangeDays).Format(time.RFC3339)
+	prevQ.StartDate = now.AddDate(0, 0, -(m.offset+2)*m.rangeDays).Format(time.RFC3339)
+	prevQ.EndDate = now.AddDate(0, 0, -(m.offset+1)*m.rangeDays).Format(time.RFC3339)
 
 	return func() tea.Msg {
 		res, err := client.Stats(context.Background(), q)
@@ -164,20 +197,20 @@ func autoTick() tea.Cmd {
 	return tea.Tick(autoEvery, func(time.Time) tea.Msg { return autoTickMsg{} })
 }
 
-// panelPoints returns a panel's rows for the active metric. Used by
-// both rendering and drill-down so selection always matches.
-func (m StatsModel) panelPoints(idx int) []api.MetricPoint {
+// panelPoints returns a panel's rows for the active metric, capped to
+// n. Used by both rendering and drill-down so selection always matches.
+func (m StatsModel) panelPoints(idx, n int) []api.MetricPoint {
 	if m.res == nil {
 		return nil
 	}
-	key := dashPanels[idx].key
+	key := m.panels()[idx].key
 	if key == "weekday" {
 		return m.weekdayPoints()
 	}
 	pts := m.res.Points(key, m.metric)
 	sort.SliceStable(pts, func(i, j int) bool { return pts[i].Value > pts[j].Value })
-	if len(pts) > panelTopN {
-		pts = pts[:panelTopN]
+	if len(pts) > n {
+		pts = pts[:n]
 	}
 	return pts
 }
@@ -227,73 +260,134 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		m.status = ""
-		switch msg.String() {
-		case "ctrl+c", "q":
-			return m, tea.Quit
-		case "esc":
-			if len(m.filters) > 0 {
-				m.filters = nil
-				m.loading = true
-				return m, m.fetch()
-			}
-			return m, tea.Quit
-		case "x", "backspace":
-			if len(m.filters) > 0 {
-				m.filters = m.filters[:len(m.filters)-1]
-				m.loading = true
-				return m, m.fetch()
-			}
-		case "tab", "right", "l":
-			m.focus = (m.focus + 1) % len(dashPanels)
-		case "shift+tab", "left", "h":
-			m.focus = (m.focus + len(dashPanels) - 1) % len(dashPanels)
-		case "down", "j":
-			if n := len(m.panelPoints(m.focus)); n > 0 {
-				m.sel[m.focus] = min(m.sel[m.focus]+1, n-1)
-			}
-		case "up", "k":
-			m.sel[m.focus] = max(m.sel[m.focus]-1, 0)
-		case "enter":
-			dim := dashPanels[m.focus].key
-			if dim == "weekday" {
-				m.status = ui.Dim.Render("weekdays are computed locally — nothing to drill into")
-				break
-			}
-			pts := m.panelPoints(m.focus)
-			i := min(m.sel[m.focus], len(pts)-1)
-			if i < 0 {
-				break
-			}
-			f := filterEntry{dim: dim, value: pts[i].Label}
-			if m.hasFilter(f) {
-				break
-			}
-			m.filters = append(m.filters, f)
-			m.sel = map[int]int{}
-			m.loading = true
-			return m, m.fetch()
-		case "u":
-			if m.metric == "clicks" {
-				m.metric = "unique_clicks"
-			} else {
-				m.metric = "clicks"
-			}
-		case "t":
-			m.rangeDays = nextRange(m.rangeDays)
-			m.loading = true
-			return m, m.fetch()
-		case "e":
-			m.status = ui.Dim.Render("exporting…")
-			return m, m.export()
-		case "a":
-			m.auto = !m.auto
-			if m.auto {
-				return m, autoTick()
-			}
-		case "r":
+		if m.focusMode {
+			return m.updateFocusMode(msg)
+		}
+		return m.updateDashboard(msg)
+	}
+	return m, nil
+}
+
+// updateFocusMode handles keys while a single chart fills the screen.
+func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	items := len(m.panels()) + 1 // + the time chart
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "x", "esc", "f":
+		m.focusMode = false
+		return m, nil
+	case "j", "down", "tab":
+		m.focusItem = (m.focusItem + 1) % items
+	case "k", "up", "shift+tab":
+		m.focusItem = (m.focusItem + items - 1) % items
+	case "u":
+		m.metric = otherMetricKey(m.metric)
+	case "t":
+		m.rangeDays = nextRange(m.rangeDays)
+		m.offset = 0
+		m.loading = true
+		return m, m.fetch()
+	case "[":
+		m.offset++
+		m.loading = true
+		return m, m.fetch()
+	case "]":
+		if m.offset > 0 {
+			m.offset--
 			m.loading = true
 			return m, m.fetch()
 		}
+	case "e":
+		m.status = ui.Dim.Render("exporting…")
+		return m, m.export()
+	case "r":
+		m.loading = true
+		return m, m.fetch()
+	}
+	return m, nil
+}
+
+// updateDashboard handles keys in the regular grid view.
+func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	panels := m.panels()
+	switch msg.String() {
+	case "ctrl+c", "q":
+		return m, tea.Quit
+	case "esc":
+		if len(m.filters) > 0 {
+			m.filters = nil
+			m.loading = true
+			return m, m.fetch()
+		}
+		return m, tea.Quit
+	case "x", "backspace":
+		if len(m.filters) > 0 {
+			m.filters = m.filters[:len(m.filters)-1]
+			m.loading = true
+			return m, m.fetch()
+		}
+	case "f":
+		m.focusMode = true
+		m.focusItem = m.focus + 1 // promote the focused panel
+		return m, nil
+	case "tab", "right", "l":
+		m.focus = (m.focus + 1) % len(panels)
+	case "shift+tab", "left", "h":
+		m.focus = (m.focus + len(panels) - 1) % len(panels)
+	case "down", "j":
+		if n := len(m.panelPoints(m.focus, panelTopN)); n > 0 {
+			m.sel[m.focus] = min(m.sel[m.focus]+1, n-1)
+		}
+	case "up", "k":
+		m.sel[m.focus] = max(m.sel[m.focus]-1, 0)
+	case "enter":
+		dim := panels[m.focus].key
+		if dim == "weekday" {
+			m.status = ui.Dim.Render("weekdays are computed locally — nothing to drill into")
+			break
+		}
+		pts := m.panelPoints(m.focus, panelTopN)
+		i := min(m.sel[m.focus], len(pts)-1)
+		if i < 0 {
+			break
+		}
+		f := filterEntry{dim: dim, value: pts[i].Label}
+		if m.hasFilter(f) {
+			break
+		}
+		m.filters = append(m.filters, f)
+		m.sel = map[int]int{}
+		m.loading = true
+		return m, m.fetch()
+	case "u":
+		m.metric = otherMetricKey(m.metric)
+	case "t":
+		m.rangeDays = nextRange(m.rangeDays)
+		m.offset = 0
+		m.loading = true
+		return m, m.fetch()
+	case "[":
+		m.offset++
+		m.loading = true
+		return m, m.fetch()
+	case "]":
+		if m.offset > 0 {
+			m.offset--
+			m.loading = true
+			return m, m.fetch()
+		}
+	case "e":
+		m.status = ui.Dim.Render("exporting…")
+		return m, m.export()
+	case "a":
+		m.auto = !m.auto
+		if m.auto {
+			return m, autoTick()
+		}
+	case "r":
+		m.loading = true
+		return m, m.fetch()
 	}
 	return m, nil
 }
@@ -314,6 +408,20 @@ func nextRange(current int) int {
 		}
 	}
 	return rangeCycle[0]
+}
+
+func rangeLabel(days int) string {
+	if days == 1 {
+		return "24h"
+	}
+	return fmt.Sprintf("%dd", days)
+}
+
+func otherMetricKey(current string) string {
+	if current == "clicks" {
+		return "unique_clicks"
+	}
+	return "clicks"
 }
 
 // metricTotal is the denominator for percentage columns.
@@ -343,13 +451,22 @@ func (m StatsModel) gridCols() int {
 	}
 }
 
-// panelChunks groups panel indices into grid rows, with each row's
-// content height set by its tallest panel (no reserved empty rows).
+// uniformRows is the shared content height of every breakdown panel:
+// sized by the fullest panel so the grid reads as one deliberate unit.
+func (m StatsModel) uniformRows() int {
+	rows := 3
+	for i := range m.panels() {
+		rows = max(rows, len(m.panelPoints(i, panelTopN)))
+	}
+	return min(rows, panelTopN)
+}
+
 func (m StatsModel) panelChunks() [][]int {
 	cols := m.gridCols()
+	n := len(m.panels())
 	var chunks [][]int
-	for start := 0; start < len(dashPanels); start += cols {
-		end := min(start+cols, len(dashPanels))
+	for start := 0; start < n; start += cols {
+		end := min(start+cols, n)
 		row := make([]int, 0, cols)
 		for i := start; i < end; i++ {
 			row = append(row, i)
@@ -359,23 +476,14 @@ func (m StatsModel) panelChunks() [][]int {
 	return chunks
 }
 
-func (m StatsModel) chunkRows(chunk []int) int {
-	rows := 1
-	for _, i := range chunk {
-		rows = max(rows, len(m.panelPoints(i)))
-	}
-	return rows
-}
-
 // chartHeight gives the time chart the height the grid doesn't need.
 func (m StatsModel) chartHeight() int {
 	used := 2 /*header+footer*/ + 2 /*chart box borders*/ + 2 /*title+legend*/
 	if len(m.filters) > 0 {
 		used++
 	}
-	for _, chunk := range m.panelChunks() {
-		used += m.chunkRows(chunk) + 3
-	}
+	rows := m.uniformRows()
+	used += len(m.panelChunks()) * (rows + 3)
 	return min(20, max(7, m.height-used-1))
 }
 
@@ -391,6 +499,8 @@ func (m StatsModel) View() tea.View {
 		b.WriteString("\n" + ui.Err.Render("✗ "+m.fetchErr.Error()) + "\n")
 	case m.res == nil:
 		b.WriteString("\n" + ui.Dim.Render("loading…") + "\n")
+	case m.focusMode:
+		b.WriteString(m.focusView() + "\n")
 	default:
 		chartH := m.chartHeight()
 		overviewW := m.overviewWidth()
@@ -409,8 +519,12 @@ func (m StatsModel) View() tea.View {
 	if m.status != "" {
 		b.WriteString(m.status + "\n")
 	}
-	hint := "↑/↓ ←/→ navigate · enter drill down · x undo · u " + otherMetric(m.metric) +
-		" · t range · e export · a auto · r refresh · q quit"
+	hint := "↑/↓ ←/→ navigate · enter drill down · f focus · x undo · u " + otherMetricLabel(m.metric) +
+		" · t range · [/] older/newer · e export · a auto · r refresh · q quit"
+	if m.focusMode {
+		hint = "j/k switch chart · x close · u " + otherMetricLabel(m.metric) +
+			" · t range · [/] older/newer · e export · r refresh · q quit"
+	}
 	b.WriteString(ui.KeyHint.Render(hint))
 
 	v := tea.NewView(b.String())
@@ -418,7 +532,7 @@ func (m StatsModel) View() tea.View {
 	return v
 }
 
-func otherMetric(current string) string {
+func otherMetricLabel(current string) string {
 	if current == "clicks" {
 		return "unique"
 	}
@@ -434,7 +548,11 @@ func (m StatsModel) headerLine() string {
 	if m.res != nil && m.res.TimeRange.StartDate != "" {
 		h += ui.Dim.Render("  ·  " + isoDate(m.res.TimeRange.StartDate) + " → " + isoDate(m.res.TimeRange.EndDate))
 	} else {
-		h += ui.Dim.Render(fmt.Sprintf("  ·  last %dd", m.rangeDays))
+		h += ui.Dim.Render("  ·  last " + rangeLabel(m.rangeDays))
+	}
+	if m.offset > 0 {
+		past := lipgloss.NewStyle().Foreground(ui.Yellow)
+		h += ui.Dim.Render("  ·  ") + past.Render(fmt.Sprintf("≪ %d window%s back", m.offset, plural(m.offset)))
 	}
 	h += ui.Dim.Render("  ·  metric: ") + ui.OK.Render(strings.ReplaceAll(m.metric, "_", " "))
 	if m.auto {
@@ -444,6 +562,13 @@ func (m StatsModel) headerLine() string {
 		h += ui.Dim.Render("  ⟳")
 	}
 	return h
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 func (m StatsModel) filterLine() string {
@@ -566,11 +691,11 @@ func (m StatsModel) activeDays() (string, bool) {
 	if len(days) == 0 {
 		return "", false
 	}
-	return fmt.Sprintf("%d of %d", len(days), m.rangeDays), true
+	return fmt.Sprintf("%d of %d", len(days), max(1, m.rangeDays)), true
 }
 
 func (m StatsModel) chartTitle() string {
-	return fmt.Sprintf("traffic over time · %dd", m.rangeDays)
+	return "traffic over time · " + rangeLabel(m.rangeDays)
 }
 
 // niceCeil rounds up to a 1/2/2.5/5×10ⁿ boundary so axis steps are even.
@@ -660,32 +785,32 @@ func (m StatsModel) timeChart(width, height int) string {
 }
 
 // panelGrid lays the breakdown panels out in responsive columns with a
-// one-column gutter; each grid row is only as tall as its content.
+// one-column gutter; every panel shares the same height.
 func (m StatsModel) panelGrid() string {
 	cols := m.gridCols()
 	panelW := (m.width - (cols - 1)) / cols
+	contentRows := m.uniformRows()
 
 	var rows []string
 	for _, chunk := range m.panelChunks() {
-		contentRows := m.chunkRows(chunk)
 		row := make([]string, 0, cols*2)
 		for _, i := range chunk {
 			if len(row) > 0 {
 				row = append(row, " ")
 			}
-			row = append(row, m.panelView(i, panelW, contentRows))
+			row = append(row, m.panelView(i, panelW, contentRows, panelTopN))
 		}
 		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, row...))
 	}
 	return strings.Join(rows, "\n")
 }
 
-func (m StatsModel) panelView(idx, width, contentRows int) string {
-	p := dashPanels[idx]
-	focused := idx == m.focus
+func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
+	p := m.panels()[idx]
+	focused := !m.focusMode && idx == m.focus
 	innerW := width - 4 // border-box width minus borders and padding
 
-	pts := m.panelPoints(idx)
+	pts := m.panelPoints(idx, topN)
 	var maxV float64
 	for _, pt := range pts {
 		maxV = max(maxV, pt.Value)
@@ -699,16 +824,12 @@ func (m StatsModel) panelView(idx, width, contentRows int) string {
 			total += pt.Value
 		}
 	}
-	barColor := lipgloss.NewStyle().Foreground(panelColors[p.key])
+	panelHue := panelColors[p.key]
 
 	// tight columns: the label column hugs the longest visible label
 	labelW := 8
 	for _, pt := range pts {
-		label := pt.Label
-		if p.key == "country" {
-			label = ui.CountryLabel(label)
-		}
-		labelW = max(labelW, lipgloss.Width(label)+1)
+		labelW = max(labelW, lipgloss.Width(m.rowLabel(p.key, pt.Label))+1)
 	}
 	labelW = min(labelW, max(10, innerW/3))
 	barMax := max(8, innerW-labelW-2-5-5-1) // -1: gap between label and bar
@@ -718,17 +839,13 @@ func (m StatsModel) panelView(idx, width, contentRows int) string {
 		lines = append(lines, ui.Dim.Render("no data"))
 	}
 	for i, pt := range pts {
-		label := pt.Label
-		if p.key == "country" {
-			label = ui.CountryLabel(label)
-		}
-		label = padToWidth(truncateToWidth(label, labelW), labelW)
+		label := padToWidth(truncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
 
 		barW := 0
 		if maxV > 0 && pt.Value > 0 {
 			barW = max(1, int(math.Round(pt.Value/maxV*float64(barMax))))
 		}
-		bar := strings.Repeat("█", barW) + strings.Repeat("·", barMax-barW)
+		barColor := lipgloss.NewStyle().Foreground(entityColor(pt.Label, panelHue))
 
 		count := fmt.Sprintf("%5.0f", pt.Value)
 		pct := "     "
@@ -741,10 +858,105 @@ func (m StatsModel) panelView(idx, width, contentRows int) string {
 			marker, labelStyle = ui.Title.Render("▸ "), ui.Title
 		}
 		lines = append(lines, marker+labelStyle.Render(label)+" "+
-			barColor.Render(strings.TrimRight(bar, "·"))+ui.Dim.Render(strings.Repeat("·", barMax-barW))+
+			barColor.Render(strings.Repeat("█", barW))+ui.Dim.Render(strings.Repeat("·", barMax-barW))+
 			count+ui.Dim.Render(pct))
 	}
 	return m.boxed(p.title, strings.Join(lines, "\n"), width, contentRows+3, focused)
+}
+
+// rowLabel normalizes a point label for display.
+func (m StatsModel) rowLabel(panelKey, label string) string {
+	if panelKey == "country" {
+		return ui.CountryLabel(label)
+	}
+	return label
+}
+
+// ── focus mode ────────────────────────────────────────────────────────
+
+// focusView fills the screen with one chart and lists the rest in a
+// sidebar; j/k walks the sidebar and the main area follows.
+func (m StatsModel) focusView() string {
+	mainW := m.width - sidebarW - 1
+	mainH := m.height - 4
+	if m.status != "" {
+		mainH--
+	}
+
+	var main string
+	if m.focusItem == 0 {
+		legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
+		main = m.boxed(m.chartTitle(), legend+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, true)
+	} else {
+		idx := m.focusItem - 1
+		main = m.boxed(m.panels()[idx].title, m.focusPanelBody(idx, mainW), mainW, mainH, true)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, main, " ", m.sidebar(mainH))
+}
+
+// focusPanelBody renders a panel's rows at full size for focus mode.
+func (m StatsModel) focusPanelBody(idx, width int) string {
+	p := m.panels()[idx]
+	innerW := width - 4
+	pts := m.panelPoints(idx, focusTopN)
+	if len(pts) == 0 {
+		return ui.Dim.Render("no data")
+	}
+	var maxV float64
+	for _, pt := range pts {
+		maxV = max(maxV, pt.Value)
+	}
+	total := m.metricTotal()
+	if p.key == "weekday" {
+		total = 0
+		for _, pt := range pts {
+			total += pt.Value
+		}
+	}
+	panelHue := panelColors[p.key]
+
+	labelW := 10
+	for _, pt := range pts {
+		labelW = max(labelW, lipgloss.Width(m.rowLabel(p.key, pt.Label))+1)
+	}
+	labelW = min(labelW, max(12, innerW*2/5))
+	barMax := max(10, innerW-labelW-5-5-1)
+
+	lines := make([]string, 0, len(pts))
+	for _, pt := range pts {
+		label := padToWidth(truncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
+		barW := 0
+		if maxV > 0 && pt.Value > 0 {
+			barW = max(1, int(math.Round(pt.Value/maxV*float64(barMax))))
+		}
+		barColor := lipgloss.NewStyle().Foreground(entityColor(pt.Label, panelHue))
+		count := fmt.Sprintf("%5.0f", pt.Value)
+		pct := "     "
+		if total > 0 {
+			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)
+		}
+		lines = append(lines, label+" "+
+			barColor.Render(strings.Repeat("█", barW))+ui.Dim.Render(strings.Repeat("·", barMax-barW))+
+			count+ui.Dim.Render(pct))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// sidebar lists all focusable charts with the active one highlighted.
+func (m StatsModel) sidebar(height int) string {
+	items := []string{"traffic over time"}
+	for _, p := range m.panels() {
+		items = append(items, p.title)
+	}
+	lines := make([]string, 0, len(items))
+	for i, item := range items {
+		if i == m.focusItem {
+			lines = append(lines, ui.Title.Render("▸ "+item))
+		} else {
+			lines = append(lines, ui.Dim.Render("  "+item))
+		}
+	}
+	return m.boxed("charts", strings.Join(lines, "\n"), sidebarW, height, false)
 }
 
 // padToWidth right-pads by display width (emoji-safe, unlike %-*s).
