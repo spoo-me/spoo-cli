@@ -24,7 +24,7 @@ const (
 	twoColMin    = 96
 	threeColMin  = 140
 	defaultRange = 90
-	sidebarW     = 30 // focus-mode sidebar width
+	sidebarW     = 36 // focus-mode sidebar width
 	autoEvery    = 30 * time.Second
 )
 
@@ -935,21 +935,74 @@ func (m StatsModel) focusPanelBody(idx, width int) string {
 	return strings.Join(lines, "\n")
 }
 
-// sidebar lists all focusable charts with the active one highlighted.
+// sidebar lists all focusable charts, each with a mini preview: a
+// sparkline for the time chart, the top rows as tiny bars for panels.
+// Previews shrink away on short terminals.
 func (m StatsModel) sidebar(height int) string {
-	items := []string{"traffic over time"}
-	for _, p := range m.panels() {
-		items = append(items, p.title)
+	panels := m.panels()
+	nItems := len(panels) + 1
+	innerW := sidebarW - 4
+	avail := height - 3 // borders + "✦ charts" heading
+
+	// how many preview lines fit per item (plus a spacer line when roomy)
+	previewLines, spacer := 0, 0
+	switch {
+	case avail >= nItems*4-1:
+		previewLines, spacer = 2, 1
+	case avail >= nItems*3:
+		previewLines = 2
+	case avail >= nItems*2:
+		previewLines = 1
 	}
-	lines := make([]string, 0, len(items))
-	for i, item := range items {
+
+	titleFor := func(i int) string {
+		if i == 0 {
+			return "traffic over time"
+		}
+		return panels[i-1].title
+	}
+
+	var lines []string
+	for i := 0; i < nItems; i++ {
 		if i == m.focusItem {
-			lines = append(lines, ui.Title.Render("▸ "+item))
+			lines = append(lines, ui.Title.Render("▸ "+titleFor(i)))
 		} else {
-			lines = append(lines, ui.Dim.Render("  "+item))
+			lines = append(lines, ui.Dim.Render("  "+titleFor(i)))
+		}
+		if previewLines > 0 {
+			lines = append(lines, m.sidebarPreview(i, innerW-2, previewLines)...)
+		}
+		if spacer > 0 && i < nItems-1 {
+			lines = append(lines, "")
 		}
 	}
 	return m.boxed("charts", strings.Join(lines, "\n"), sidebarW, height, false)
+}
+
+// sidebarPreview renders up to n compact lines for a sidebar item.
+func (m StatsModel) sidebarPreview(item, width, n int) []string {
+	if item == 0 { // time chart → one-line sparkline
+		spark := miniSpark(m.res.Points("time", m.metric), width)
+		return []string{"  " + ui.OK.Render(spark)}[:min(1, n)]
+	}
+	p := m.panels()[item-1]
+	pts := m.panelPoints(item-1, n)
+	if len(pts) == 0 {
+		return []string{"  " + ui.Dim.Render("no data")}
+	}
+	maxV := pts[0].Value
+	for _, pt := range pts {
+		maxV = max(maxV, pt.Value)
+	}
+	labelW := 10
+	barW := max(4, width-labelW-1)
+	out := make([]string, 0, len(pts))
+	for _, pt := range pts {
+		label := padToWidth(truncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
+		out = append(out, "  "+ui.Dim.Render(label)+
+			ui.Bar(dashBarStyle, pt.Value, maxV, barW, entityColor(pt.Label, panelColors[p.key])))
+	}
+	return out
 }
 
 // padToWidth right-pads by display width (emoji-safe, unlike %-*s).
