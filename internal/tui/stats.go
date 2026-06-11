@@ -900,7 +900,7 @@ var columnTitle = map[string]string{
 // panelTableStyles: final head-to-head — header band vs tree,
 // alternating so the two are always adjacent.
 var panelTableStyles = map[string]tableStyle{
-	"short_code": tsHeaderBand,
+	"short_code": tsTreeBand,
 	"browser":    tsTree,
 	"os":         tsHeaderBand,
 	"country":    tsTree,

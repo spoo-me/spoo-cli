@@ -17,6 +17,7 @@ const (
 	tsHeaderBand                     // inverted header strip
 	tsSelectedBand                   // cursor row gets a background band
 	tsTree                           // ├─ rows
+	tsTreeBand                       // tree rows under a header band
 )
 
 var (
@@ -32,8 +33,9 @@ func styledTable(ts tableStyle, widths []int, header []string, rows [][]string, 
 		rows = rows[:maxRows]
 	}
 
+	tree := ts == tsTree || ts == tsTreeBand
 	w := append([]int(nil), widths...)
-	if ts == tsTree {
+	if tree {
 		w[0] = max(6, w[0]-3) // branch glyphs take three columns
 	}
 	fmtRow := func(cells []string) string {
@@ -50,7 +52,7 @@ func styledTable(ts tableStyle, widths []int, header []string, rows [][]string, 
 
 	var out []string
 	switch ts {
-	case tsHeaderBand:
+	case tsHeaderBand, tsTreeBand:
 		out = append(out, tsBandBG.Render(fmtRow(header)))
 	case tsUnderline:
 		up := make([]string, len(header))
@@ -70,14 +72,14 @@ func styledTable(ts tableStyle, widths []int, header []string, rows [][]string, 
 	for i, r := range rows {
 		plain := fmtRow(r)
 		branch := ""
-		if ts == tsTree {
+		if tree {
 			branch = "├─"
 			if i == len(rows)-1 {
 				branch = "╰─"
 			}
 		}
 		content := plain
-		if ts == tsTree {
+		if tree {
 			content = " " + branch + plain
 		}
 		var line string
@@ -88,7 +90,7 @@ func styledTable(ts tableStyle, widths []int, header []string, rows [][]string, 
 			line = tsSelBand.Render(content)
 		case i == sel:
 			line = ui.Title.Render(content)
-		case ts == tsTree:
+		case tree:
 			line = " " + ui.Dim.Render(branch) + plain
 		default:
 			line = plain
