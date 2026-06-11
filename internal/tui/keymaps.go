@@ -66,7 +66,8 @@ func (statsDashKeys) FullHelp() [][]key.Binding {
 		},
 		{
 			bind("r", "refresh"),
-			bind("?", "close help"),
+			bind("click", "focus/drill"),
+			bind("wheel", "scroll rows"),
 			bind("esc", "clear/quit"),
 			bind("q", "quit"),
 		},

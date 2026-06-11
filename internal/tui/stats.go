@@ -328,6 +328,12 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.switchAll = msg.items
 		return m, nil
 
+	case tea.MouseClickMsg:
+		return m.handleClick(msg)
+
+	case tea.MouseWheelMsg:
+		return m.handleWheel(msg)
+
 	case tea.KeyPressMsg:
 		m.status = ""
 		if m.exportBox.open {
@@ -743,6 +749,7 @@ func (m StatsModel) View() tea.View {
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true
+	v.MouseMode = tea.MouseModeCellMotion // click focuses, wheel scrolls
 	return v
 }
 

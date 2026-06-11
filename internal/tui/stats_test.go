@@ -330,6 +330,60 @@ func TestTableToggleIsPerPanel(t *testing.T) {
 	}
 }
 
+// clicking focuses panels and selects rows; the second click on a
+// selected row drills; the wheel scrolls rows or pages the chart.
+func TestMouseClickAndWheel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"scope":"all","summary":{"total_clicks":1},"metrics":{}}`))
+	}))
+	defer srv.Close()
+
+	m := newStatsModel(t, srv.URL)
+	regions := m.hitRegions()
+	if len(regions) != 7 { // time chart + 6 panels
+		t.Fatalf("regions = %d, want 7", len(regions))
+	}
+	var browsers hitRegion
+	for _, r := range regions {
+		if r.item == 2 {
+			browsers = r
+		}
+	}
+
+	// click browsers row 1 (Safari): focuses the panel and selects the row
+	click := func(x, y int) {
+		next, _ := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+		m = next.(StatsModel)
+	}
+	click(browsers.x+2, browsers.y+3)
+	if m.focus != 2 || m.sel[1] != 1 {
+		t.Fatalf("click: focus=%d sel=%d, want 2/1", m.focus, m.sel[1])
+	}
+
+	// same spot again drills (Safari filter)
+	next, cmd := m.Update(tea.MouseClickMsg{X: browsers.x + 2, Y: browsers.y + 3, Button: tea.MouseLeft})
+	m = next.(StatsModel)
+	if cmd == nil || len(m.filters) != 1 || m.filters[0].value != "Safari" {
+		t.Fatalf("second click should drill: filters=%v", m.filters)
+	}
+	m.filters = nil
+
+	// wheel up over browsers moves the selection back up
+	next, _ = m.Update(tea.MouseWheelMsg{X: browsers.x + 2, Y: browsers.y + 2, Button: tea.MouseWheelUp})
+	m = next.(StatsModel)
+	if m.sel[1] != 0 {
+		t.Fatalf("wheel: sel=%d, want 0", m.sel[1])
+	}
+
+	// wheel down over the chart pages back in history
+	chart := regions[0]
+	next, cmd = m.Update(tea.MouseWheelMsg{X: chart.x + 2, Y: chart.y + 2, Button: tea.MouseWheelDown})
+	m = next.(StatsModel)
+	if m.offset != 1 || cmd == nil {
+		t.Fatalf("chart wheel: offset=%d, want 1 with refetch", m.offset)
+	}
+}
+
 // g opens the link picker; choosing a link re-targets the dashboard.
 func TestLinkSwitcher(t *testing.T) {
 	var gotCode string
