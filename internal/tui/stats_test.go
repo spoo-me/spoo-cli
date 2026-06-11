@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/zalando/go-keyring"
@@ -244,6 +245,52 @@ func TestWindowPaging(t *testing.T) {
 	m, _ = statsKey(t, m, "]")
 	if m.offset != 0 {
 		t.Fatalf("offset = %d, want 0 after ]", m.offset)
+	}
+}
+
+func TestMinimapCachesWindowsAndBracketsCurrent(t *testing.T) {
+	m := newStatsModel(t, "http://unused.invalid")
+	now := time.Now().UTC()
+	next, _ := m.Update(statsLoadedMsg{
+		res: testStatsResponse(), prev: testStatsResponse(),
+		curStart: now.AddDate(0, 0, -90), curEnd: now,
+		prevStart: now.AddDate(0, 0, -180), prevEnd: now.AddDate(0, 0, -90),
+		rangeDays: 90,
+	})
+	m = next.(StatsModel)
+	if len(m.hist) < 180 {
+		t.Fatalf("lookback cache holds %d days, want the current+prev windows (~181)", len(m.hist))
+	}
+
+	view := m.View().Content
+	lookbackStart := now.AddDate(0, 0, -180).Format("2006-01-02")
+	for _, want := range []string{"╰", "╯", lookbackStart} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("minimap missing %q", want)
+		}
+	}
+
+	// paging back pulls the bracket off the right edge — "today"
+	// appears in the gap it leaves
+	paged, _ := statsKey(t, m, "[")
+	if !strings.Contains(paged.View().Content, "today") {
+		t.Fatal("paged-back minimap should label the right edge as today")
+	}
+
+	// sub-daily windows must not pollute the daily cache
+	cached := len(m.hist)
+	next, _ = m.Update(statsLoadedMsg{
+		res: testStatsResponse(), curStart: now.AddDate(0, 0, -1), curEnd: now, rangeDays: 1,
+	})
+	m = next.(StatsModel)
+	if len(m.hist) != cached {
+		t.Fatalf("24h window changed the cache: %d → %d days", cached, len(m.hist))
+	}
+
+	// drilling down invalidates the lookback (it was unfiltered)
+	m, _ = statsKey(t, m, "enter")
+	if len(m.hist) != 0 {
+		t.Fatalf("drill-down kept %d cached days, want a cleared cache", len(m.hist))
 	}
 }
 

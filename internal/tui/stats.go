@@ -53,6 +53,11 @@ type statsLoadedMsg struct {
 	res  *api.StatsResponse
 	prev *api.StatsResponse // previous window, for period-over-period deltas
 	err  error
+
+	// window bounds for the minimap's lookback cache
+	curStart, curEnd   time.Time
+	prevStart, prevEnd time.Time
+	rangeDays          int
 }
 
 type exportDoneMsg struct {
@@ -84,6 +89,7 @@ type StatsModel struct {
 
 	res      *api.StatsResponse
 	prev     *api.StatsResponse
+	hist     map[string]histPoint // per-day lookback cache for the minimap
 	fetchErr error
 	loading  bool
 	status   string
@@ -109,6 +115,7 @@ func NewStats(client *api.Client, target, scope, tz string) StatsModel {
 		metric:    "clicks",
 		sel:       map[int]int{},
 		tableOn:   map[string]bool{},
+		hist:      map[string]histPoint{},
 		loading:   true,
 		width:     100,
 		height:    40,
@@ -141,11 +148,16 @@ func (m StatsModel) panels() []panelDef {
 
 func (m StatsModel) Init() tea.Cmd { return m.fetch() }
 
+// window is the date range of the current view: rangeDays wide, paged
+// back offset windows from now.
+func (m StatsModel) window() (start, end time.Time) {
+	end = time.Now().UTC().AddDate(0, 0, -m.offset*m.rangeDays)
+	return end.AddDate(0, 0, -m.rangeDays), end
+}
+
 // query builds the stats request for the current dashboard state.
 func (m StatsModel) query() api.StatsQuery {
-	now := time.Now().UTC()
-	end := now.AddDate(0, 0, -m.offset*m.rangeDays)
-	start := end.AddDate(0, 0, -m.rangeDays)
+	start, end := m.window()
 	groupBy := []string{"time", "browser", "os", "country", "city", "referrer"}
 	if m.target == "" {
 		groupBy = append(groupBy, "short_code")
@@ -172,11 +184,13 @@ func (m StatsModel) query() api.StatsQuery {
 func (m StatsModel) fetch() tea.Cmd {
 	client := m.client
 	q := m.query()
+	curStart, curEnd := m.window()
+	prevStart, prevEnd := curStart.AddDate(0, 0, -m.rangeDays), curStart
 	prevQ := q
 	prevQ.GroupBy = []string{"time"}
-	now := time.Now().UTC()
-	prevQ.StartDate = now.AddDate(0, 0, -(m.offset+2)*m.rangeDays).Format(time.RFC3339)
-	prevQ.EndDate = now.AddDate(0, 0, -(m.offset+1)*m.rangeDays).Format(time.RFC3339)
+	prevQ.StartDate = prevStart.Format(time.RFC3339)
+	prevQ.EndDate = prevEnd.Format(time.RFC3339)
+	rangeDays := m.rangeDays
 
 	return func() tea.Msg {
 		res, err := client.Stats(context.Background(), q)
@@ -184,7 +198,12 @@ func (m StatsModel) fetch() tea.Cmd {
 		if err == nil {
 			prev, _ = client.Stats(context.Background(), prevQ) // best-effort
 		}
-		return statsLoadedMsg{res: res, prev: prev, err: err}
+		return statsLoadedMsg{
+			res: res, prev: prev, err: err,
+			curStart: curStart, curEnd: curEnd,
+			prevStart: prevStart, prevEnd: prevEnd,
+			rangeDays: rangeDays,
+		}
 	}
 }
 
@@ -248,6 +267,11 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case statsLoadedMsg:
 		m.loading = false
 		m.res, m.prev, m.fetchErr = msg.res, msg.prev, msg.err
+		if m.hist == nil {
+			m.hist = map[string]histPoint{}
+		}
+		mergeHist(m.hist, msg.res, msg.curStart, msg.curEnd, msg.rangeDays)
+		mergeHist(m.hist, msg.prev, msg.prevStart, msg.prevEnd, msg.rangeDays)
 		return m, nil
 
 	case exportDoneMsg:
@@ -360,6 +384,7 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		if len(m.filters) > 0 {
 			m.filters = nil
+			m.hist = map[string]histPoint{} // lookback was filtered
 			m.loading = true
 			return m, m.fetch()
 		}
@@ -367,6 +392,7 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "x", "backspace":
 		if len(m.filters) > 0 {
 			m.filters = m.filters[:len(m.filters)-1]
+			m.hist = map[string]histPoint{}
 			m.loading = true
 			return m, m.fetch()
 		}
@@ -440,6 +466,7 @@ func (m StatsModel) drill(idx, topN int) (tea.Model, tea.Cmd) {
 	}
 	m.filters = append(m.filters, f)
 	m.sel = map[int]int{}
+	m.hist = map[string]histPoint{} // lookback cache is per-filter-set
 	m.loading = true
 	return m, m.fetch()
 }
@@ -530,7 +557,7 @@ func (m StatsModel) panelChunks() [][]int {
 
 // chartHeight gives the time chart the height the grid doesn't need.
 func (m StatsModel) chartHeight() int {
-	used := 2 /*header+footer*/ + 2 /*chart box borders*/ + 2 /*title+legend*/
+	used := 2 /*header+footer*/ + 2 /*chart box borders*/ + 2 /*title+legend*/ + minimapRows
 	if len(m.filters) > 0 {
 		used++
 	}
@@ -558,11 +585,12 @@ func (m StatsModel) View() tea.View {
 		overviewW := m.overviewWidth()
 		chartBoxW := m.width - overviewW - 1
 		legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
-		chartBody := legend + "\n" + m.timeChart(chartBoxW-4, chartH)
+		boxH := chartH + 4 + minimapRows
+		chartBody := legend + "\n" + m.timeChart(chartBoxW-4, chartH) + "\n" + m.minimap(chartBoxW-4)
 		top := lipgloss.JoinHorizontal(lipgloss.Top,
-			m.boxed("overview", m.overviewBody(), overviewW, chartH+4, false, ui.Accent),
+			m.boxed("overview", m.overviewBody(), overviewW, boxH, false, ui.Accent),
 			" ",
-			m.boxed(m.chartTitle(), chartBody, chartBoxW, chartH+4, false, m.metricHue()),
+			m.boxed(m.chartTitle(), chartBody, chartBoxW, boxH, false, m.metricHue()),
 		)
 		b.WriteString(top + "\n")
 		b.WriteString(m.panelGrid() + "\n")
@@ -1073,7 +1101,8 @@ func (m StatsModel) focusView() string {
 			main = m.boxed(m.chartTitle()+" · table", m.timeTableBody(mainW-4, mainH-3), mainW, mainH, mainFocused, m.metricHue())
 		} else {
 			legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
-			main = m.boxed(m.chartTitle(), legend+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, mainFocused, m.metricHue())
+			body := legend + "\n" + m.timeChart(mainW-4, mainH-4-minimapRows) + "\n" + m.minimap(mainW-4)
+			main = m.boxed(m.chartTitle(), body, mainW, mainH, mainFocused, m.metricHue())
 		}
 	} else {
 		idx := m.focusItem - 1
