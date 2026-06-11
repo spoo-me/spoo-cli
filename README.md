@@ -29,7 +29,7 @@ Homebrew and Scoop packages are coming with the first tagged release.
 | `spoo shorten [url]` | Create a link — flags for alias, password, max clicks, expiry, bot blocking, custom domain. Interactive form with live alias availability when run bare. |
 | `spoo links` | Interactive TUI browser: navigate, open, copy, toggle status, delete, export (`e`). `--json` or piping prints the list instead. `?` shows all keys. |
 | `spoo links update/delete <id>` | Scriptable link management (`delete` requires `--yes`). |
-| `spoo stats [code]` | Interactive analytics dashboard: time chart, browser/OS/country/city/referrer panels, drill-down filtering (enter on any row), range expressions (`T` — `7d`, `4h`, `now - 2w to now - 1w`, `2026-01-01 to 2026-02-15`), clicks↔unique toggle (`u`). Piped or `--plain` prints a static report; public stats work logged out. |
+| `spoo stats [code]` | Interactive analytics dashboard: time chart with previous-period overlay (`p`), browser/OS/country/city/referrer panels, drill-down filtering (enter or click any row), link switcher (`g`), range expressions (`T` — `7d`, `4h`, `now - 2w to now - 1w`, `2026-01-01 to 2026-02-15`), clicks↔unique toggle (`u`), full mouse support. Piped or `--plain` prints a static report; public stats work logged out. |
 | `spoo export [code]` | Download analytics as json, csv (zip), xlsx, or xml. |
 | `spoo domains` | Custom domains: `add` (prints the DNS records to set), `verify`, `remove`. |
 | `spoo keys` | API keys: `create` (token shown once), list, `revoke`. |
