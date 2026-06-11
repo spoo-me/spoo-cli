@@ -636,14 +636,14 @@ func (m StatsModel) filterLine() string {
 
 // boxed wraps content in the dashboard's standard bordered panel.
 // width/height are border-box totals (lipgloss v2 semantics). hue is
-// the panel's pastel; when focused, the border takes its dim cut and
-// the title its saturated cut.
+// the panel's pastel; when focused, border and title both take its
+// saturated cut.
 func (m StatsModel) boxed(title, body string, width, height int, focused bool, hue color.Color) string {
 	borderColor, titleStyle := color.Color(ui.Muted), ui.Dim.Bold(true)
 	if focused {
-		sh := hueFor(hue)
-		borderColor = sh.dim
-		titleStyle = lipgloss.NewStyle().Bold(true).Foreground(sh.bright)
+		sat := hueFor(hue)
+		borderColor = sat
+		titleStyle = lipgloss.NewStyle().Bold(true).Foreground(sat)
 	}
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
