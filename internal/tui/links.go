@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -74,7 +75,8 @@ type LinksModel struct {
 	searchBox  textinput.Model
 	searching  bool
 	exportBox  exportModal
-	showDetail bool // detail pane open; it always reflects the selected row
+	helper     help.Model // ? flips between short and full key help
+	showDetail bool       // detail pane open; it always reflects the selected row
 	stats      map[string]statsEntry
 	statsSeq   int // bumped on selection change; stale debounce ticks no-op
 	page       *api.URLPage
@@ -110,6 +112,7 @@ func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, open
 		tbl:         tbl,
 		searchBox:   search,
 		exportBox:   newExportModal(),
+		helper:      newHelp(),
 		stats:       map[string]statsEntry{},
 		pageNo:      max(1, opts.Page),
 		loading:     true,
@@ -188,6 +191,7 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.helper.SetWidth(msg.Width)
 		m.relayout()
 		return m, nil
 
@@ -339,6 +343,9 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.exportBox, cmd = m.exportBox.show(defaultExportName("links", time.Now().Format("2006-01-02")))
 		return m, cmd
+	case "?":
+		m.helper.ShowAll = !m.helper.ShowAll
+		return m, nil
 	case "r":
 		m.loading = true
 		return m, m.fetch(m.pageNo)
@@ -538,11 +545,7 @@ func (m LinksModel) View() tea.View {
 		if m.status != "" {
 			b.WriteString(m.status + "\n")
 		}
-		hint := "↑/↓ move · ←/→ pages · enter details · / search · s sort · o open · c copy · t toggle · d delete · e export · r refresh · q quit"
-		if m.showDetail {
-			hint = "↑/↓ move · enter/esc close · o open · c copy · t toggle · d delete · q quit"
-		}
-		b.WriteString(ui.KeyHint.Render(hint))
+		b.WriteString(m.helper.View(linksKeys{}))
 	}
 
 	v := tea.NewView(b.String())

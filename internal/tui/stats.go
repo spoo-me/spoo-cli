@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
@@ -94,6 +95,7 @@ type StatsModel struct {
 	rangeErr  string
 
 	exportBox exportModal
+	helper    help.Model // ? flips between short and full key help
 
 	res      *api.StatsResponse
 	prev     *api.StatsResponse
@@ -124,6 +126,7 @@ func NewStats(client *api.Client, target, scope, tz string) StatsModel {
 		win:       defaultWindow,
 		rangeBox:  rangeBox,
 		exportBox: newExportModal(),
+		helper:    newHelp(),
 		metric:    "clicks",
 		sel:       map[int]int{},
 		tableOn:   map[string]bool{},
@@ -283,6 +286,7 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+		m.helper.SetWidth(msg.Width)
 		return m, nil
 
 	case statsLoadedMsg:
@@ -433,6 +437,8 @@ func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		return m.openExport()
+	case "?":
+		m.helper.ShowAll = !m.helper.ShowAll
 	case "r":
 		m.loading = true
 		return m, m.fetch()
@@ -520,6 +526,8 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.auto {
 			return m, autoTick()
 		}
+	case "?":
+		m.helper.ShowAll = !m.helper.ShowAll
 	case "r":
 		m.loading = true
 		return m, m.fetch()
@@ -620,6 +628,9 @@ func (m StatsModel) panelChunks() [][]int {
 // chartHeight gives the time chart the height the grid doesn't need.
 func (m StatsModel) chartHeight() int {
 	used := 2 /*header+footer*/ + 2 /*chart box borders*/ + 2 /*title+legend*/
+	if m.helper.ShowAll {
+		used += 3 // the full help table runs four lines, not one
+	}
 	if len(m.filters) > 0 {
 		used++
 	}
@@ -688,23 +699,14 @@ func (m StatsModel) View() tea.View {
 		}
 		b.WriteString(strip)
 	case m.focusMode:
-		b.WriteString(ui.KeyHint.Render("←/→ pane · ↑/↓ " + paneVerb(m.focusPane) + " · tab chart · enter drill · t table · x close · u " + otherMetricLabel(m.metric) +
-			" · T range · [/] older/newer · e export · r refresh · q quit"))
+		b.WriteString(m.helper.View(statsFocusKeys{}))
 	default:
-		b.WriteString(ui.KeyHint.Render("↑/↓ ←/→ navigate · enter drill down · f focus · t table · x undo · u " + otherMetricLabel(m.metric) +
-			" · T range · [/] older/newer · e export · a auto · r refresh · q quit"))
+		b.WriteString(m.helper.View(statsDashKeys{}))
 	}
 
 	v := tea.NewView(b.String())
 	v.AltScreen = true
 	return v
-}
-
-func otherMetricLabel(current string) string {
-	if current == "clicks" {
-		return "unique"
-	}
-	return "clicks"
 }
 
 func (m StatsModel) headerLine() string {
@@ -1347,11 +1349,3 @@ func truncateToWidth(s string, w int) string {
 
 // FetchErr reports a fetch error so the command can surface it on exit.
 func (m StatsModel) FetchErr() error { return m.fetchErr }
-
-// paneVerb names what ↑/↓ act on in focus mode.
-func paneVerb(pane int) string {
-	if pane == 1 {
-		return "charts"
-	}
-	return "rows"
-}
