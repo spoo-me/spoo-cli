@@ -4,6 +4,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -72,6 +73,7 @@ type LinksModel struct {
 	tbl        table.Model
 	searchBox  textinput.Model
 	searching  bool
+	exportBox  exportModal
 	showDetail bool // detail pane open; it always reflects the selected row
 	stats      map[string]statsEntry
 	statsSeq   int // bumped on selection change; stale debounce ticks no-op
@@ -107,6 +109,7 @@ func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, open
 		opts:        opts,
 		tbl:         tbl,
 		searchBox:   search,
+		exportBox:   newExportModal(),
 		stats:       map[string]statsEntry{},
 		pageNo:      max(1, opts.Page),
 		loading:     true,
@@ -228,15 +231,52 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if m.exportBox.open {
+			return m.updateExport(msg)
+		}
 		if m.searching {
 			return m.updateSearch(msg)
 		}
 		return m.updateBrowse(msg)
 	}
+	if m.exportBox.open { // directory reads, blink ticks
+		return m.updateExport(msg)
+	}
 
 	var cmd tea.Cmd
 	m.tbl, cmd = m.tbl.Update(msg)
 	return m, cmd
+}
+
+// updateExport routes traffic to the export dialog and downloads the
+// account's analytics workbook once it confirms.
+func (m LinksModel) updateExport(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var req *exportRequest
+	var cmd tea.Cmd
+	m.exportBox, req, cmd = m.exportBox.handle(msg)
+	if req != nil {
+		m.status = ui.Dim.Render("exporting…")
+		return m, m.export(*req)
+	}
+	return m, cmd
+}
+
+// export downloads account-wide analytics (the server's widest window)
+// in the requested format.
+func (m LinksModel) export(req exportRequest) tea.Cmd {
+	client := m.client
+	q := api.StatsQuery{
+		Scope:     "all",
+		StartDate: time.Now().UTC().AddDate(0, 0, -api.MaxRangeDays).Format(time.RFC3339),
+		GroupBy:   []string{"time", "browser", "os", "country", "city", "referrer", "short_code"},
+	}
+	return func() tea.Msg {
+		_, data, err := client.Export(context.Background(), q, req.format)
+		if err == nil {
+			err = os.WriteFile(req.path, data, 0o644)
+		}
+		return actionMsg{note: "exported " + collapseHome(req.path), err: err}
+	}
 }
 
 // updateSearch handles keys while the search box is focused.
@@ -295,6 +335,10 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.scheduleStats()
 		}
 		return m, nil
+	case "e":
+		var cmd tea.Cmd
+		m.exportBox, cmd = m.exportBox.show(defaultExportName("links", time.Now().Format("2006-01-02")))
+		return m, cmd
 	case "r":
 		m.loading = true
 		return m, m.fetch(m.pageNo)
@@ -450,6 +494,12 @@ func (m LinksModel) rows() []table.Row {
 }
 
 func (m LinksModel) View() tea.View {
+	if m.exportBox.open {
+		v := tea.NewView(m.exportBox.view(max(60, m.width), max(20, m.height)))
+		v.AltScreen = true
+		return v
+	}
+
 	var b strings.Builder
 
 	title := ui.Title.Render("spoo links")
@@ -488,7 +538,7 @@ func (m LinksModel) View() tea.View {
 		if m.status != "" {
 			b.WriteString(m.status + "\n")
 		}
-		hint := "↑/↓ move · ←/→ pages · enter details · / search · s sort · o open · c copy · t toggle · d delete · r refresh · q quit"
+		hint := "↑/↓ move · ←/→ pages · enter details · / search · s sort · o open · c copy · t toggle · d delete · e export · r refresh · q quit"
 		if m.showDetail {
 			hint = "↑/↓ move · enter/esc close · o open · c copy · t toggle · d delete · q quit"
 		}

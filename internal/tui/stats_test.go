@@ -3,6 +3,8 @@ package tui
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -326,6 +328,69 @@ func TestTableToggleIsPerPanel(t *testing.T) {
 	if m.tableOn["browser"] {
 		t.Fatal("second t did not toggle browsers back to bars")
 	}
+}
+
+// e opens the export dialog; the filename extension picks the format
+// and esc closes without exporting.
+func TestExportModal(t *testing.T) {
+	var gotFormat string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotFormat = r.URL.Query().Get("format")
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	m := newStatsModel(t, srv.URL)
+	m, _ = statsKey(t, m, "e")
+	if !m.exportBox.open {
+		t.Fatal("e should open the export dialog")
+	}
+	if !strings.Contains(m.View().Content, "export analytics") {
+		t.Fatal("export dialog not rendered")
+	}
+	name := m.exportBox.name.Value()
+	if !strings.HasPrefix(name, "spoo-stats-all-") || !strings.HasSuffix(name, ".xlsx") {
+		t.Fatalf("default name = %q", name)
+	}
+
+	// a bad extension errors inline and keeps the dialog open
+	m.exportBox.name.SetValue("report.pdf")
+	m, _ = statsKey(t, m, "enter")
+	if !m.exportBox.open || m.exportBox.err == "" {
+		t.Fatalf("bad extension should error (open=%v err=%q)", m.exportBox.open, m.exportBox.err)
+	}
+
+	// .json drives the format param
+	m.exportBox.name.SetValue("report.json")
+	m, cmd := statsKey(t, m, "enter")
+	if m.exportBox.open || cmd == nil {
+		t.Fatal("enter with a valid name should close and export")
+	}
+	if msg := cmd(); msg != nil {
+		if done, ok := msg.(exportDoneMsg); ok && done.err != nil {
+			t.Fatalf("export failed: %v", done.err)
+		}
+	}
+	if gotFormat != "json" {
+		t.Fatalf("format = %q, want json", gotFormat)
+	}
+	os.Remove(filepath.Join(mustGetwd(t), "report.json"))
+
+	// esc just closes
+	m, _ = statsKey(t, m, "e")
+	m, _ = statsKey(t, m, "esc")
+	if m.exportBox.open {
+		t.Fatal("esc should close the dialog")
+	}
+}
+
+func mustGetwd(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return wd
 }
 
 // the time chart is focusable like any panel; t turns it into a

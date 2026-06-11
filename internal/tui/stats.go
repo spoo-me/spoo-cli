@@ -93,6 +93,8 @@ type StatsModel struct {
 	rangeBox  textinput.Model
 	rangeErr  string
 
+	exportBox exportModal
+
 	res      *api.StatsResponse
 	prev     *api.StatsResponse
 	fetchErr error
@@ -115,18 +117,19 @@ func NewStats(client *api.Client, target, scope, tz string) StatsModel {
 	rangeBox.Placeholder = "type a range…"
 	rangeBox.SetWidth(36) // fits "2026-01-01 to 2026-02-15" with room; keeps the cheat-sheet column still
 	return StatsModel{
-		client:   client,
-		target:   target,
-		scope:    scope,
-		tz:       tz,
-		win:      defaultWindow,
-		rangeBox: rangeBox,
-		metric:   "clicks",
-		sel:      map[int]int{},
-		tableOn:  map[string]bool{},
-		loading:  true,
-		width:    100,
-		height:   40,
+		client:    client,
+		target:    target,
+		scope:     scope,
+		tz:        tz,
+		win:       defaultWindow,
+		rangeBox:  rangeBox,
+		exportBox: newExportModal(),
+		metric:    "clicks",
+		sel:       map[int]int{},
+		tableOn:   map[string]bool{},
+		loading:   true,
+		width:     100,
+		height:    40,
 	}
 }
 
@@ -212,15 +215,28 @@ func (m StatsModel) fetch() tea.Cmd {
 	}
 }
 
-func (m StatsModel) export() tea.Cmd {
+// openExport pops the export dialog with a dated default filename.
+func (m StatsModel) openExport() (tea.Model, tea.Cmd) {
+	subject := "stats-all"
+	if m.target != "" {
+		subject = "stats-" + m.target
+	}
+	var cmd tea.Cmd
+	m.exportBox, cmd = m.exportBox.show(defaultExportName(subject, time.Now().Format("2006-01-02")))
+	return m, cmd
+}
+
+// export downloads the current view in the requested format and
+// writes it where the dialog pointed.
+func (m StatsModel) export(req exportRequest) tea.Cmd {
 	client := m.client
 	q := m.query()
 	return func() tea.Msg {
-		name, data, err := client.Export(context.Background(), q, "xlsx")
+		_, data, err := client.Export(context.Background(), q, req.format)
 		if err == nil {
-			err = os.WriteFile(name, data, 0o644)
+			err = os.WriteFile(req.path, data, 0o644)
 		}
-		return exportDoneMsg{name: name, err: err}
+		return exportDoneMsg{name: collapseHome(req.path), err: err}
 	}
 }
 
@@ -291,6 +307,9 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		m.status = ""
+		if m.exportBox.open {
+			return m.updateExport(msg)
+		}
 		if m.rangeMode {
 			return m.updateRange(msg)
 		}
@@ -299,7 +318,23 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.updateDashboard(msg)
 	}
+	if m.exportBox.open { // directory reads, blink ticks
+		return m.updateExport(msg)
+	}
 	return m, nil
+}
+
+// updateExport routes traffic to the export dialog and fires the
+// download once it confirms.
+func (m StatsModel) updateExport(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var req *exportRequest
+	var cmd tea.Cmd
+	m.exportBox, req, cmd = m.exportBox.handle(msg)
+	if req != nil {
+		m.status = ui.Dim.Render("exporting…")
+		return m, m.export(*req)
+	}
+	return m, cmd
 }
 
 // updateRange handles keys while the range-expression strip is open.
@@ -397,8 +432,7 @@ func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.fetch()
 		}
 	case "e":
-		m.status = ui.Dim.Render("exporting…")
-		return m, m.export()
+		return m.openExport()
 	case "r":
 		m.loading = true
 		return m, m.fetch()
@@ -480,8 +514,7 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.fetch()
 		}
 	case "e":
-		m.status = ui.Dim.Render("exporting…")
-		return m, m.export()
+		return m.openExport()
 	case "a":
 		m.auto = !m.auto
 		if m.auto {
@@ -596,6 +629,12 @@ func (m StatsModel) chartHeight() int {
 }
 
 func (m StatsModel) View() tea.View {
+	if m.exportBox.open {
+		v := tea.NewView(m.exportBox.view(m.width, m.height))
+		v.AltScreen = true
+		return v
+	}
+
 	var b strings.Builder
 	b.WriteString(m.headerLine() + "\n")
 	if line := m.filterLine(); line != "" {
