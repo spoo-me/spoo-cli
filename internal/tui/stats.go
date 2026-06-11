@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 	tslc "github.com/NimbleMarkets/ntcharts/v2/linechart/timeserieslinechart"
@@ -87,8 +88,9 @@ type StatsModel struct {
 	fetchErr error
 	loading  bool
 	status   string
-	focus    int         // index into panels()
-	sel      map[int]int // per-panel selection row
+	focus    int             // index into panels()
+	sel      map[int]int     // per-panel selection row
+	tableOn  map[string]bool // panels currently in table view (by key)
 
 	focusMode bool
 	focusItem int // 0 = time chart, 1.. = panels()[focusItem-1]
@@ -106,6 +108,7 @@ func NewStats(client *api.Client, target, scope, tz string) StatsModel {
 		rangeDays: defaultRange,
 		metric:    "clicks",
 		sel:       map[int]int{},
+		tableOn:   map[string]bool{},
 		loading:   true,
 		width:     100,
 		height:    40,
@@ -288,6 +291,12 @@ func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "u":
 		m.metric = otherMetricKey(m.metric)
 	case "t":
+		key := "time"
+		if m.focusItem > 0 {
+			key = m.panels()[m.focusItem-1].key
+		}
+		m.tableOn[key] = !m.tableOn[key]
+	case "T", "shift+t":
 		m.rangeDays = nextRange(m.rangeDays)
 		m.offset = 0
 		m.loading = true
@@ -367,6 +376,9 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "u":
 		m.metric = otherMetricKey(m.metric)
 	case "t":
+		key := panels[m.focus].key
+		m.tableOn[key] = !m.tableOn[key]
+	case "T", "shift+t":
 		m.rangeDays = nextRange(m.rangeDays)
 		m.offset = 0
 		m.loading = true
@@ -523,11 +535,11 @@ func (m StatsModel) View() tea.View {
 	if m.status != "" {
 		b.WriteString(m.status + "\n")
 	}
-	hint := "↑/↓ ←/→ navigate · enter drill down · f focus · x undo · u " + otherMetricLabel(m.metric) +
-		" · t range · [/] older/newer · e export · a auto · r refresh · q quit"
+	hint := "↑/↓ ←/→ navigate · enter drill down · f focus · t table · x undo · u " + otherMetricLabel(m.metric) +
+		" · T range · [/] older/newer · e export · a auto · r refresh · q quit"
 	if m.focusMode {
-		hint = "j/k switch chart · x close · u " + otherMetricLabel(m.metric) +
-			" · t range · [/] older/newer · e export · r refresh · q quit"
+		hint = "j/k switch chart · t table · x close · u " + otherMetricLabel(m.metric) +
+			" · T range · [/] older/newer · e export · r refresh · q quit"
 	}
 	b.WriteString(ui.KeyHint.Render(hint))
 
@@ -814,6 +826,11 @@ func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
 	focused := !m.focusMode && idx == m.focus
 	innerW := width - 4 // border-box width minus borders and padding
 
+	if m.tableOn[p.key] {
+		return m.boxed(p.title, m.panelTableBody(idx, innerW, contentRows, topN, focused),
+			width, contentRows+3, focused)
+	}
+
 	pts := m.panelPoints(idx, topN)
 	var maxV float64
 	for _, pt := range pts {
@@ -870,6 +887,109 @@ func (m StatsModel) rowLabel(panelKey, label string) string {
 	return label
 }
 
+// columnTitle is the singular header for a panel's table view.
+var columnTitle = map[string]string{
+	"short_code": "link",
+	"browser":    "browser",
+	"os":         "os",
+	"country":    "country",
+	"city":       "city",
+	"referrer":   "referrer",
+	"weekday":    "weekday",
+}
+
+// dashTableStyles adapts the bubbles table to the dashboard look.
+func dashTableStyles(focused bool) table.Styles {
+	st := table.DefaultStyles()
+	st.Header = lipgloss.NewStyle().Bold(true).Foreground(ui.Muted)
+	st.Cell = lipgloss.NewStyle()
+	st.Selected = lipgloss.NewStyle()
+	if focused {
+		st.Selected = lipgloss.NewStyle().Bold(true).Foreground(ui.Accent)
+	}
+	return st
+}
+
+// panelTableBody renders a panel's data as a bubbles table.
+func (m StatsModel) panelTableBody(idx, innerW, height, topN int, focused bool) string {
+	p := m.panels()[idx]
+	pts := m.panelPoints(idx, topN)
+	if len(pts) == 0 {
+		return ui.Dim.Render("no data")
+	}
+	total := m.metricTotal()
+	if p.key == "weekday" {
+		total = 0
+		for _, pt := range pts {
+			total += pt.Value
+		}
+	}
+	metricCol := "clicks"
+	if m.metric == "unique_clicks" {
+		metricCol = "unique"
+	}
+	cols := []table.Column{
+		{Title: columnTitle[p.key], Width: max(10, innerW-22)},
+		{Title: metricCol, Width: 9},
+		{Title: "share", Width: 9},
+	}
+	rows := make([]table.Row, 0, len(pts))
+	for _, pt := range pts {
+		share := ""
+		if total > 0 {
+			share = fmt.Sprintf("%.1f%%", pt.Value/total*100)
+		}
+		rows = append(rows, table.Row{
+			m.rowLabel(p.key, pt.Label), fmt.Sprintf("%.0f", pt.Value), share,
+		})
+	}
+	tbl := table.New(
+		table.WithColumns(cols),
+		table.WithRows(rows),
+		table.WithWidth(innerW),
+		table.WithHeight(max(1, height-1)),
+		table.WithFocused(focused),
+	)
+	tbl.SetStyles(dashTableStyles(focused))
+	if focused {
+		tbl.SetCursor(min(m.sel[idx], len(rows)-1))
+	}
+	return tbl.View()
+}
+
+// timeTableBody renders the time series as a table (focus mode),
+// most recent bucket first.
+func (m StatsModel) timeTableBody(innerW, height int) string {
+	clicks := m.res.Points("time", "clicks")
+	if len(clicks) == 0 {
+		return ui.Dim.Render("no time series data")
+	}
+	uniq := map[string]float64{}
+	for _, p := range m.res.Points("time", "unique_clicks") {
+		uniq[p.Label] = p.Value
+	}
+	cols := []table.Column{
+		{Title: "time", Width: max(12, innerW-24)},
+		{Title: "clicks", Width: 10},
+		{Title: "unique", Width: 10},
+	}
+	rows := make([]table.Row, 0, len(clicks))
+	for i := len(clicks) - 1; i >= 0; i-- {
+		p := clicks[i]
+		rows = append(rows, table.Row{
+			p.Label, fmt.Sprintf("%.0f", p.Value), fmt.Sprintf("%.0f", uniq[p.Label]),
+		})
+	}
+	tbl := table.New(
+		table.WithColumns(cols),
+		table.WithRows(rows),
+		table.WithWidth(innerW),
+		table.WithHeight(max(1, height-1)),
+	)
+	tbl.SetStyles(dashTableStyles(false))
+	return tbl.View()
+}
+
 // ── focus mode ────────────────────────────────────────────────────────
 
 // focusView fills the screen with one chart and lists the rest in a
@@ -883,11 +1003,19 @@ func (m StatsModel) focusView() string {
 
 	var main string
 	if m.focusItem == 0 {
-		legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
-		main = m.boxed(m.chartTitle(), legend+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, true)
+		if m.tableOn["time"] {
+			main = m.boxed(m.chartTitle()+" · table", m.timeTableBody(mainW-4, mainH-3), mainW, mainH, true)
+		} else {
+			legend := ui.OK.Render("─── clicks") + "  " + ui.Title.Render("─── unique")
+			main = m.boxed(m.chartTitle(), legend+"\n"+m.timeChart(mainW-4, mainH-4), mainW, mainH, true)
+		}
 	} else {
 		idx := m.focusItem - 1
-		main = m.boxed(m.panels()[idx].title, m.focusPanelBody(idx, mainW), mainW, mainH, true)
+		body := m.focusPanelBody(idx, mainW)
+		if m.tableOn[m.panels()[idx].key] {
+			body = m.panelTableBody(idx, mainW-4, mainH-3, focusTopN, false)
+		}
+		main = m.boxed(m.panels()[idx].title, body, mainW, mainH, true)
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, main, " ", m.sidebar(mainH))
 }

@@ -135,7 +135,7 @@ func TestRangeCycleRefetches(t *testing.T) {
 	defer srv.Close()
 
 	m := newStatsModel(t, srv.URL)
-	m, cmd := statsKey(t, m, "t")
+	m, cmd := statsKey(t, m, "T")
 	if m.rangeDays != 30 || cmd == nil {
 		t.Fatalf("rangeDays = %d, cmd = %v; want 30 with refetch", m.rangeDays, cmd)
 	}
@@ -143,7 +143,7 @@ func TestRangeCycleRefetches(t *testing.T) {
 	if calls != 2 { // current window + previous window (for deltas)
 		t.Fatalf("calls = %d, want 2", calls)
 	}
-	m, _ = statsKey(t, m, "t")
+	m, _ = statsKey(t, m, "T")
 	if m.rangeDays != 7 {
 		t.Fatalf("rangeDays = %d, want 7", m.rangeDays)
 	}
@@ -228,5 +228,54 @@ func TestEscClearsFiltersThenQuits(t *testing.T) {
 	_, cmd = statsKey(t, m, "esc")
 	if cmd == nil {
 		t.Fatal("second esc should quit")
+	}
+}
+
+// t toggles the focused panel between bars and a bubbles table; each
+// panel keeps its own mode, so several tables can be open at once.
+func TestTableToggleIsPerPanel(t *testing.T) {
+	m := newStatsModel(t, "http://unused.invalid")
+	m, cmd := statsKey(t, m, "t") // focus 0 = top links
+	if cmd != nil {
+		t.Fatal("table toggle must not refetch")
+	}
+	if !m.tableOn["short_code"] {
+		t.Fatal("t did not enable table mode for top links")
+	}
+	view := m.View().Content
+	if !strings.Contains(view, "link") || !strings.Contains(view, "share") {
+		t.Fatalf("table headers missing from view")
+	}
+
+	m, _ = statsKey(t, m, "tab") // browsers
+	m, _ = statsKey(t, m, "t")
+	if !m.tableOn["short_code"] || !m.tableOn["browser"] {
+		t.Fatalf("expected both panels in table mode: %v", m.tableOn)
+	}
+
+	m, _ = statsKey(t, m, "t") // toggle browsers back off
+	if m.tableOn["browser"] {
+		t.Fatal("second t did not toggle browsers back to bars")
+	}
+}
+
+// inside focus mode, t toggles the promoted chart's table view —
+// including the time chart, which becomes a date/clicks/unique table.
+func TestTableToggleInFocusMode(t *testing.T) {
+	m := newStatsModel(t, "http://unused.invalid")
+	m, _ = statsKey(t, m, "f")
+	m, _ = statsKey(t, m, "k") // wrap to item 0 = time chart? no: k from 1 goes to 0
+	if m.focusItem != 0 {
+		t.Fatalf("focusItem = %d, want 0 (time chart)", m.focusItem)
+	}
+	m, _ = statsKey(t, m, "t")
+	if !m.tableOn["time"] {
+		t.Fatal("t did not toggle the time table in focus mode")
+	}
+	view := m.View().Content
+	for _, want := range []string{"· table", "2026-06-02", "unique"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("time table missing %q", want)
+		}
 	}
 }
