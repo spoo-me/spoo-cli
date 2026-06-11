@@ -611,8 +611,11 @@ func (m StatsModel) View() tea.View {
 	switch {
 	case m.rangeMode:
 		strip := ui.Title.Render("range ") + m.rangeBox.View()
-		// a persistent cheat-sheet rides the strip; errors take its place
-		tail, tailStyle := "e.g. 7d · 24h · 4h · 5m · now - 2w to now - 1w · 2026-01-01 to 2026-02-15 · enter apply · esc cancel", ui.KeyHint
+		// a persistent cheat-sheet rides the strip — dimmer than regular
+		// hints so the input stays the loudest thing on the line; errors
+		// take its place
+		faint := lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280")).Italic(true)
+		tail, tailStyle := "e.g. 7d · 24h · 4h · 5m · now - 2w to now - 1w · 2026-01-01 to 2026-02-15 · enter apply · esc cancel", faint
 		if m.rangeErr != "" {
 			tail, tailStyle = "✗ "+m.rangeErr, ui.Err
 		}
