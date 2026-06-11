@@ -53,7 +53,8 @@ func styledTable(ts tableStyle, widths []int, header []string, rows [][]string, 
 	var out []string
 	switch ts {
 	case tsHeaderBand, tsTreeBand:
-		out = append(out, tsBandBG.Render(fmtRow(header)))
+		// extend the band across the full panel width
+		out = append(out, tsBandBG.Render(padToWidth(fmtRow(header), width)))
 	case tsUnderline:
 		up := make([]string, len(header))
 		for i, h := range header {
@@ -87,7 +88,7 @@ func styledTable(ts tableStyle, widths []int, header []string, rows [][]string, 
 		// selected rows get ONE style over the whole plain line — a
 		// pre-styled branch would embed a reset that cuts it short
 		case i == sel && ts == tsSelectedBand:
-			line = tsSelBand.Render(content)
+			line = tsSelBand.Render(padToWidth(content, width))
 		case i == sel:
 			line = ui.Title.Render(content)
 		case tree:
