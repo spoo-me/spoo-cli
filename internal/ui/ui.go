@@ -33,9 +33,20 @@ var (
 // SparkRunes are the eight block heights used for sparkline charts.
 var SparkRunes = []rune("▁▂▃▄▅▆▇█")
 
-// Bar renders a horizontal capped-line bar (╺━━╸) on a dashed track,
-// scaled to value/maxV over width columns.
-func Bar(value, maxV float64, width int, c color.Color) string {
+// BarStyle selects how horizontal bars are drawn.
+type BarStyle int
+
+const (
+	BarCapped    BarStyle = iota // ╺━━━╸ on ╌╌ track
+	BarUpperHalf                 // ▀▀▀▀ on ·· track
+	BarHalf                      // ▄▄▄▄ on ·· track
+	BarSegmented                 // ▰▰▰▰ on ▱▱ track
+	BarDoubleLine                // ════ on ── track
+	BarFade                      // ██▓▒░ on ·· track
+)
+
+// Bar renders a horizontal bar scaled to value/maxV over width columns.
+func Bar(style BarStyle, value, maxV float64, width int, c color.Color) string {
 	if width < 2 {
 		width = 2
 	}
@@ -44,14 +55,30 @@ func Bar(value, maxV float64, width int, c color.Color) string {
 		w = max(1, int(math.Round(value/maxV*float64(width))))
 	}
 	fill := lipgloss.NewStyle().Foreground(c)
-	track := Dim.Render(strings.Repeat("╌", width-w))
-	switch w {
-	case 0:
-		return Dim.Render(strings.Repeat("╌", width))
-	case 1:
-		return fill.Render("╺") + track
-	default:
-		return fill.Render("╺"+strings.Repeat("━", w-2)+"╸") + track
+
+	switch style {
+	case BarUpperHalf:
+		return fill.Render(strings.Repeat("▀", w)) + Dim.Render(strings.Repeat("·", width-w))
+	case BarHalf:
+		return fill.Render(strings.Repeat("▄", w)) + Dim.Render(strings.Repeat("·", width-w))
+	case BarSegmented:
+		return fill.Render(strings.Repeat("▰", w)) + Dim.Render(strings.Repeat("▱", width-w))
+	case BarDoubleLine:
+		return fill.Render(strings.Repeat("═", w)) + Dim.Render(strings.Repeat("─", width-w))
+	case BarFade:
+		solid := max(0, w-3)
+		tail := "▓▒░"[:min(3, w-solid)*3] // ▓▒░ are 3 bytes each
+		return fill.Render(strings.Repeat("█", solid)+tail) + Dim.Render(strings.Repeat("·", width-w))
+	default: // BarCapped
+		track := Dim.Render(strings.Repeat("╌", width-w))
+		switch w {
+		case 0:
+			return Dim.Render(strings.Repeat("╌", width))
+		case 1:
+			return fill.Render("╺") + track
+		default:
+			return fill.Render("╺"+strings.Repeat("━", w-2)+"╸") + track
+		}
 	}
 }
 
