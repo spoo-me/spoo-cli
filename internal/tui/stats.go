@@ -898,15 +898,15 @@ var columnTitle = map[string]string{
 }
 
 // panelTableStyles temporarily assigns a different table style per
-// panel so the candidates can be compared on live data.
+// panel so the surviving candidates can be compared on live data.
 var panelTableStyles = map[string]tableStyle{
 	"short_code": tsSelectedBand,
-	"browser":    tsZebra,
+	"browser":    tsUnderline,
 	"os":         tsHeaderBand,
-	"country":    tsASCII,
-	"city":       tsTree,
-	"referrer":   tsDotted,
-	"weekday":    tsUnderline,
+	"country":    tsTree,
+	"city":       tsUnderline,
+	"referrer":   tsSelectedBand,
+	"weekday":    tsHeaderBand,
 }
 
 // panelTableBody renders a panel's data as a styled table. withRank

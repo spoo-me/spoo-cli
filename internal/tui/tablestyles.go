@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	lipgloss "charm.land/lipgloss/v2"
-	lgtable "charm.land/lipgloss/v2/table"
 
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
@@ -14,17 +13,13 @@ import (
 type tableStyle int
 
 const (
-	tsUnderline tableStyle = iota // UPPERCASE header over a ─ rule
-	tsZebra                       // alternate row backgrounds
-	tsHeaderBand                  // inverted header strip
-	tsSelectedBand                // cursor row gets a background band
-	tsTree                        // ├─ rows
-	tsDotted                      // ┄┊ grid frame (lipgloss/table)
-	tsASCII                       // +--+ grid (lipgloss/table)
+	tsUnderline    tableStyle = iota // UPPERCASE header over a ─ rule
+	tsHeaderBand                     // inverted header strip
+	tsSelectedBand                   // cursor row gets a background band
+	tsTree                           // ├─ rows
 )
 
 var (
-	tsZebraBG = lipgloss.NewStyle().Background(lipgloss.Color("#1E1F2A"))
 	tsBandBG  = lipgloss.NewStyle().Background(lipgloss.Color("#2D2B3A")).Foreground(lipgloss.Color("#C4B5FD")).Bold(true)
 	tsSelBand = lipgloss.NewStyle().Background(lipgloss.Color("#312E45")).Foreground(lipgloss.Color("#C4B5FD")).Bold(true)
 	tsHeader  = lipgloss.NewStyle().Foreground(ui.Muted).Bold(true)
@@ -35,9 +30,6 @@ var (
 func styledTable(ts tableStyle, widths []int, header []string, rows [][]string, sel, maxRows, width int) string {
 	if maxRows > 0 && len(rows) > maxRows {
 		rows = rows[:maxRows]
-	}
-	if ts == tsDotted || ts == tsASCII {
-		return gridTable(ts, header, rows, sel, width)
 	}
 
 	w := append([]int(nil), widths...)
@@ -89,41 +81,8 @@ func styledTable(ts tableStyle, widths []int, header []string, rows [][]string, 
 			line = tsSelBand.Render(line)
 		case i == sel:
 			line = ui.Title.Render(line)
-		case ts == tsZebra && i%2 == 1:
-			line = tsZebraBG.Render(line)
 		}
 		out = append(out, line)
 	}
 	return strings.Join(out, "\n")
-}
-
-func gridTable(ts tableStyle, header []string, rows [][]string, sel, width int) string {
-	border := lipgloss.ASCIIBorder()
-	if ts == tsDotted {
-		border = lipgloss.Border{
-			Top: "┄", Bottom: "┄", Left: "┊", Right: "┊",
-			TopLeft: "╭", TopRight: "╮", BottomLeft: "╰", BottomRight: "╯",
-			MiddleLeft: "┊", MiddleRight: "┊", Middle: "┼", MiddleTop: "┄", MiddleBottom: "┄",
-		}
-	}
-	t := lgtable.New().
-		Border(border).
-		BorderStyle(ui.Dim).
-		Headers(header...).
-		Rows(rows...).
-		Width(width).
-		StyleFunc(func(row, _ int) lipgloss.Style {
-			switch {
-			case row == lgtable.HeaderRow:
-				return tsHeader.PaddingLeft(1).PaddingRight(1)
-			case row == sel:
-				return ui.Title.PaddingLeft(1).PaddingRight(1)
-			default:
-				return lipgloss.NewStyle().PaddingLeft(1).PaddingRight(1)
-			}
-		})
-	if ts == tsDotted {
-		t.BorderColumn(false)
-	}
-	return t.Render()
 }
