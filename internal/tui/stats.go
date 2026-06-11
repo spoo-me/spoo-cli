@@ -656,7 +656,7 @@ func (m StatsModel) View() tea.View {
 	default:
 		chartH := m.chartHeight()
 		overviewW := m.overviewWidth()
-		chartBoxW := m.width - overviewW
+		chartBoxW := m.width - overviewW - 1
 		chartFocused := !m.focusMode && m.focus == 0
 		title, chartBody := m.chartTitle(), ""
 		if m.tableOn["time"] {
@@ -666,11 +666,13 @@ func (m StatsModel) View() tea.View {
 			legend := chartClicks.Render("─── clicks") + "  " + chartUnique.Render("─── unique")
 			chartBody = legend + "\n" + m.timeChart(chartBoxW-4, chartH)
 		}
-		b.WriteString(m.composeBody(
+		top := lipgloss.JoinHorizontal(lipgloss.Top,
 			m.boxed("overview", m.overviewBody(), overviewW, chartH+4, false, ui.Accent),
+			" ",
 			m.boxed(title, chartBody, chartBoxW, chartH+4, chartFocused, m.metricHue()),
-			chartH,
-		) + "\n")
+		)
+		b.WriteString(top + "\n")
+		b.WriteString(m.panelGrid() + "\n")
 	}
 
 	if m.status != "" {
@@ -966,42 +968,33 @@ func (m StatsModel) timeChart(width, height int) string {
 	return chart.View()
 }
 
-// composeBody lays the whole dashboard body out as compositor layers.
-// Cards stay distinct, with their borders directly adjacent — the
-// smallest gap that keeps every panel its own box. Layers carry an
-// incrementing z because the compositor's z-sort is not stable.
-func (m StatsModel) composeBody(overviewBox, chartBox string, chartH int) string {
+// panelGrid lays the breakdown panels out in responsive columns. A
+// one-column gutter visually matches the stacked borders between rows
+// (terminal cells are ~2:1), and the division remainder widens the
+// leading panels so each row spans the full terminal width.
+func (m StatsModel) panelGrid() string {
 	cols := m.gridCols()
-	panelW := m.width / cols
-	rem := m.width - panelW*cols
+	usable := m.width - (cols - 1)
+	panelW := usable / cols
+	rem := usable - panelW*cols
 	contentRows := m.uniformRows()
-	panelH := contentRows + 3
 
-	z := 0
-	layer := func(content string, x, y int) *lipgloss.Layer {
-		z++
-		return lipgloss.NewLayer(content).X(x).Y(y).Z(z)
-	}
-
-	layers := []*lipgloss.Layer{
-		layer(overviewBox, 0, 0),
-		layer(chartBox, m.overviewWidth(), 0),
-	}
-	gridY := chartH + 4
-	chunks := m.panelChunks()
-	for r, chunk := range chunks {
-		x := 0
+	var rows []string
+	for _, chunk := range m.panelChunks() {
+		row := make([]string, 0, cols*2)
 		for n, i := range chunk {
+			if len(row) > 0 {
+				row = append(row, " ")
+			}
 			w := panelW
 			if n < rem {
 				w++
 			}
-			layers = append(layers,
-				layer(m.panelView(i, w, contentRows, panelTopN), x, gridY+r*panelH))
-			x += w
+			row = append(row, m.panelView(i, w, contentRows, panelTopN))
 		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, row...))
 	}
-	return lipgloss.NewCompositor(layers...).Render()
+	return strings.Join(rows, "\n")
 }
 
 func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
