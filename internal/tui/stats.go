@@ -897,17 +897,10 @@ var columnTitle = map[string]string{
 	"weekday":    "weekday",
 }
 
-// panelTableStyles: final head-to-head — header band vs tree,
-// alternating so the two are always adjacent.
-var panelTableStyles = map[string]tableStyle{
-	"short_code": tsTreeBand,
-	"browser":    tsTree,
-	"os":         tsHeaderBand,
-	"country":    tsTree,
-	"city":       tsHeaderBand,
-	"referrer":   tsTree,
-	"weekday":    tsHeaderBand,
-}
+// dashTableStyle is the table style used across the dashboard panels
+// (winner of the live A/B): tree rows under a header band. The time
+// table stays band-only — dates aren't a hierarchy.
+const dashTableStyle = tsTreeBand
 
 // panelTableBody renders a panel's data as a styled table. withRank
 // adds a leaderboard # column and withTotals a Σ footer (focus mode).
@@ -955,7 +948,7 @@ func (m StatsModel) panelTableBody(idx, innerW, height, topN int, focused, withR
 	if focused {
 		sel = min(m.sel[idx], len(rows)-1)
 	}
-	out := styledTable(panelTableStyles[p.key], widths, header, rows, sel, height-2, innerW)
+	out := styledTable(dashTableStyle, widths, header, rows, sel, height-2, innerW)
 
 	if withTotals && total > 0 {
 		totalsRow := []string{"Σ", fmt.Sprintf("%.0f", sum), fmt.Sprintf("%.1f%%", sum/total*100)}
