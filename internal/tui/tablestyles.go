@@ -26,9 +26,11 @@ var (
 	tsHeader  = lipgloss.NewStyle().Foreground(ui.Muted).Bold(true)
 )
 
-// styledTable renders header+rows in the given style. sel == -1 means
-// no cursor row; rows beyond maxRows are dropped.
-func styledTable(ts tableStyle, widths []int, header []string, rows [][]string, sel, maxRows, width int) string {
+// styledTable renders header+rows in the given style. labelIdx names
+// the text column (left-aligned, absorbs the tree branch width — it is
+// not always 0: a rank column may precede it). sel == -1 means no
+// cursor row; rows beyond maxRows are dropped.
+func styledTable(ts tableStyle, labelIdx int, widths []int, header []string, rows [][]string, sel, maxRows, width int) string {
 	if maxRows > 0 && len(rows) > maxRows {
 		rows = rows[:maxRows]
 	}
@@ -36,12 +38,12 @@ func styledTable(ts tableStyle, widths []int, header []string, rows [][]string, 
 	tree := ts == tsTree || ts == tsTreeBand
 	w := append([]int(nil), widths...)
 	if tree {
-		w[0] = max(6, w[0]-3) // branch glyphs take three columns
+		w[labelIdx] = max(6, w[labelIdx]-3) // branch glyphs take three columns
 	}
 	fmtRow := func(cells []string) string {
 		parts := make([]string, len(cells))
 		for i, c := range cells {
-			if i == 0 {
+			if i == labelIdx {
 				parts[i] = padToWidth(truncateToWidth(c, w[i]), w[i])
 			} else {
 				parts[i] = fmt.Sprintf("%*s", w[i], truncateToWidth(c, w[i]))

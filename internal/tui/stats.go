@@ -924,8 +924,10 @@ func (m StatsModel) panelTableBody(idx, innerW, height, topN int, focused, withR
 
 	header := []string{columnTitle[p.key], metricCol, "share"}
 	widths := []int{max(10, innerW-22), 8, 8}
+	labelIdx := 0
 	if withRank {
 		header = append([]string{"#"}, header...)
+		labelIdx = 1
 		widths = append([]int{3}, widths...)
 		widths[1] = max(10, widths[1]-4)
 	}
@@ -948,7 +950,7 @@ func (m StatsModel) panelTableBody(idx, innerW, height, topN int, focused, withR
 	if focused {
 		sel = min(m.sel[idx], len(rows)-1)
 	}
-	out := styledTable(dashTableStyle, widths, header, rows, sel, height-2, innerW)
+	out := styledTable(dashTableStyle, labelIdx, widths, header, rows, sel, height-2, innerW)
 
 	if withTotals && total > 0 {
 		totalsRow := []string{"Σ", fmt.Sprintf("%.0f", sum), fmt.Sprintf("%.1f%%", sum/total*100)}
@@ -997,7 +999,7 @@ func (m StatsModel) timeTableBody(innerW, height int) string {
 			p.Label, fmt.Sprintf("%.0f", p.Value), fmt.Sprintf("%.0f", uniq[p.Label]),
 		})
 	}
-	out := styledTable(tsHeaderBand, widths, header, rows, -1, height-4, innerW)
+	out := styledTable(tsHeaderBand, 0, widths, header, rows, -1, height-4, innerW)
 	out += "\n" + ui.Dim.Render(strings.Repeat("─", min(innerW, 40))) +
 		"\n" + tsHeader.Render(styledTotals(widths, []string{"Σ", fmt.Sprintf("%.0f", sumC), fmt.Sprintf("%.0f", sumU)}))
 	return out
