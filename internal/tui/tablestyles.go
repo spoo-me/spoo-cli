@@ -68,19 +68,30 @@ func styledTable(ts tableStyle, widths []int, header []string, rows [][]string, 
 	}
 
 	for i, r := range rows {
-		line := fmtRow(r)
+		plain := fmtRow(r)
+		branch := ""
 		if ts == tsTree {
-			branch := "├─"
+			branch = "├─"
 			if i == len(rows)-1 {
 				branch = "╰─"
 			}
-			line = " " + ui.Dim.Render(branch) + line
 		}
+		content := plain
+		if ts == tsTree {
+			content = " " + branch + plain
+		}
+		var line string
 		switch {
+		// selected rows get ONE style over the whole plain line — a
+		// pre-styled branch would embed a reset that cuts it short
 		case i == sel && ts == tsSelectedBand:
-			line = tsSelBand.Render(line)
+			line = tsSelBand.Render(content)
 		case i == sel:
-			line = ui.Title.Render(line)
+			line = ui.Title.Render(content)
+		case ts == tsTree:
+			line = " " + ui.Dim.Render(branch) + plain
+		default:
+			line = plain
 		}
 		out = append(out, line)
 	}
