@@ -635,7 +635,7 @@ func (m StatsModel) chartHeight() int {
 		used++
 	}
 	rows := m.uniformRows()
-	used += len(m.panelChunks()) * (rows + 2) // row seams share a line
+	used += len(m.panelChunks()) * (rows + 3 + gridGap) // cards + their row gap
 	return min(20, max(7, m.height-used-1))
 }
 
@@ -656,7 +656,7 @@ func (m StatsModel) View() tea.View {
 	default:
 		chartH := m.chartHeight()
 		overviewW := m.overviewWidth()
-		chartBoxW := m.width - overviewW
+		chartBoxW := m.width - overviewW - gridGap
 		chartFocused := !m.focusMode && m.focus == 0
 		title, chartBody := m.chartTitle(), ""
 		if m.tableOn["time"] {
@@ -966,51 +966,44 @@ func (m StatsModel) timeChart(width, height int) string {
 	return chart.View()
 }
 
-// composeBody lays the whole dashboard body out as compositor layers.
-// Columns sit border-to-border (││); row seams OVERLAP by one line so
-// vertical separation is a single shared rule — that's what makes the
-// row gap read as tight as the column gap, since two stacked ─ strokes
-// span a full cell while ││ hugs. healBorders turns the overlapped
-// corners into proper junctions. Layers carry an incrementing z
-// because the compositor's z-sort is not stable.
+// gridGap is the padding between cards — the same count of blank
+// cells horizontally and vertically.
+const gridGap = 1
+
+// composeBody lays the whole dashboard body out as compositor layers:
+// distinct cards separated by gridGap blank cells in both directions.
 func (m StatsModel) composeBody(overviewBox, chartBox string, chartH int) string {
 	cols := m.gridCols()
-	panelW := m.width / cols
-	rem := m.width - panelW*cols
+	usable := m.width - (cols-1)*gridGap
+	panelW := usable / cols
+	rem := usable - panelW*cols
 	contentRows := m.uniformRows()
 	panelH := contentRows + 3
 
 	z := 0
-	layer := func(content string, x, y int, focused bool) *lipgloss.Layer {
+	layer := func(content string, x, y int) *lipgloss.Layer {
 		z++
-		l := lipgloss.NewLayer(content).X(x).Y(y).Z(z)
-		if focused {
-			l = l.Z(1000) // the focused ring must win the shared row seams
-		}
-		return l
+		return lipgloss.NewLayer(content).X(x).Y(y).Z(z)
 	}
 
 	layers := []*lipgloss.Layer{
-		layer(overviewBox, 0, 0, false),
-		layer(chartBox, m.overviewWidth(), 0, !m.focusMode && m.focus == 0),
+		layer(overviewBox, 0, 0),
+		layer(chartBox, m.overviewWidth()+gridGap, 0),
 	}
-	gridY := chartH + 4 - 1 // grid top border rides the top row's bottom
-	chunks := m.panelChunks()
-	for r, chunk := range chunks {
+	gridY := chartH + 4 + gridGap
+	for r, chunk := range m.panelChunks() {
 		x := 0
 		for n, i := range chunk {
 			w := panelW
 			if n < rem {
 				w++
 			}
-			focused := !m.focusMode && i == m.focus-1
 			layers = append(layers,
-				layer(m.panelView(i, w, contentRows, panelTopN), x, gridY+r*(panelH-1), focused))
-			x += w
+				layer(m.panelView(i, w, contentRows, panelTopN), x, gridY+r*(panelH+gridGap)))
+			x += w + gridGap
 		}
 	}
-	bodyH := gridY + len(chunks)*(panelH-1) + 1
-	return healBorders(lipgloss.NewCompositor(layers...).Render(), m.width, bodyH)
+	return lipgloss.NewCompositor(layers...).Render()
 }
 
 func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
