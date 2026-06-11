@@ -897,15 +897,15 @@ var columnTitle = map[string]string{
 	"weekday":    "weekday",
 }
 
-// panelTableStyles temporarily assigns a different table style per
-// panel so the surviving candidates can be compared on live data.
+// panelTableStyles: final head-to-head — header band vs tree,
+// alternating so the two are always adjacent.
 var panelTableStyles = map[string]tableStyle{
-	"short_code": tsSelectedBand,
-	"browser":    tsUnderline,
+	"short_code": tsHeaderBand,
+	"browser":    tsTree,
 	"os":         tsHeaderBand,
 	"country":    tsTree,
-	"city":       tsUnderline,
-	"referrer":   tsSelectedBand,
+	"city":       tsHeaderBand,
+	"referrer":   tsTree,
 	"weekday":    tsHeaderBand,
 }
 
@@ -1004,7 +1004,7 @@ func (m StatsModel) timeTableBody(innerW, height int) string {
 			p.Label, fmt.Sprintf("%.0f", p.Value), fmt.Sprintf("%.0f", uniq[p.Label]),
 		})
 	}
-	out := styledTable(tsUnderline, widths, header, rows, -1, height-4, innerW)
+	out := styledTable(tsHeaderBand, widths, header, rows, -1, height-4, innerW)
 	out += "\n" + ui.Dim.Render(strings.Repeat("─", min(innerW, 40))) +
 		"\n" + tsHeader.Render(styledTotals(widths, []string{"Σ", fmt.Sprintf("%.0f", sumC), fmt.Sprintf("%.0f", sumU)}))
 	return out
