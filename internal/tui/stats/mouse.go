@@ -6,7 +6,8 @@ import (
 
 // Mouse support for the dashboard grid: click a panel to focus it,
 // click a row to select it (again to drill), wheel to move the row
-// selection — or page the window when wheeling over the time chart.
+// selection. Window paging lives on the keyboard ('[' / ']') — wheel
+// over the chart does nothing, so casual scrolling can't fire fetches.
 // Regions are derived from the same math the renderer uses, so they
 // can't drift from what's on screen.
 
@@ -91,8 +92,9 @@ func (m Model) handleClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleWheel scrolls the row selection of the panel under the
-// pointer; over the time chart it pages the window.
+// handleWheel scrolls the row selection of the panel under the pointer.
+// The time chart has no rows, so the wheel does nothing there — paging
+// is keyboard-only ('[' / ']') to avoid stray scrolls hitting the API.
 func (m Model) handleWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	delta := 0
 	switch msg.Button {
@@ -107,16 +109,8 @@ func (m Model) handleWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 		if !reg.contains(msg.X, msg.Y) {
 			continue
 		}
-		if reg.item == 0 { // time chart: wheel pages through history
-			if delta > 0 {
-				m.offset++
-			} else if m.offset > 0 {
-				m.offset--
-			} else {
-				return m, nil
-			}
-			m.loading = true
-			return m, m.fetch()
+		if reg.item == 0 { // time chart: no rows to scroll
+			return m, nil
 		}
 		idx := reg.item - 1
 		m.focus = reg.item

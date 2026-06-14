@@ -375,12 +375,12 @@ func TestMouseClickAndWheel(t *testing.T) {
 		t.Fatalf("wheel: sel=%d, want 0", m.sel[1])
 	}
 
-	// wheel down over the chart pages back in history
+	// wheel over the chart is a no-op — paging is keyboard-only ('[' / ']')
 	chart := regions[0]
 	next, cmd = m.Update(tea.MouseWheelMsg{X: chart.x + 2, Y: chart.y + 2, Button: tea.MouseWheelDown})
 	m = next.(Model)
-	if m.offset != 1 || cmd == nil {
-		t.Fatalf("chart wheel: offset=%d, want 1 with refetch", m.offset)
+	if m.offset != 0 || cmd != nil {
+		t.Fatalf("chart wheel must not page: offset=%d cmd=%v", m.offset, cmd)
 	}
 }
 
