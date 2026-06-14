@@ -10,6 +10,9 @@ import (
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
+// barGap is the minimum dim margin a coloured bar leaves before its number.
+const barGap = 2
+
 // panelGrid lays the breakdown panels out in responsive columns. A
 // one-column gutter visually matches the stacked borders between rows
 // (terminal cells are ~2:1), and the division remainder widens the
@@ -77,10 +80,11 @@ func (m Model) panelView(idx, width, contentRows, topN int) string {
 	for i, pt := range pts {
 		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
 
-		// dotted leader fills the count's right-align padding so the bar's
-		// track runs continuously up to every number, no floating gap
+		// cap the coloured bar 2 cells short so it never touches the number;
+		// the dim track + leader fills that margin and the right-align
+		// padding, so every row reads the same with no floating gap
 		compact := kit.CompactNum(pt.Value)
-		leader := ui.Dim.Render(strings.Repeat("·", countW-len(compact)))
+		leader := ui.Dim.Render(strings.Repeat("·", barGap+countW-len(compact)))
 		pct := "     "
 		if total > 0 {
 			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)
@@ -91,7 +95,7 @@ func (m Model) panelView(idx, width, contentRows, topN int) string {
 			marker, labelStyle = ui.Title.Render("▸ "), ui.Title
 		}
 		lines = append(lines, marker+labelStyle.Render(label)+" "+
-			ui.Bar(dashBarStyle, pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
+			ui.Bar(dashBarStyle, pt.Value, maxV, barMax-barGap, entityColor(pt.Label, panelHue))+
 			leader+compact+ui.Dim.Render(pct))
 	}
 	return m.boxed(p.title, strings.Join(lines, "\n"), width, contentRows+3, focused, panelHue)
@@ -260,7 +264,7 @@ func (m Model) focusPanelBody(idx, width int) string {
 	for i, pt := range pts {
 		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
 		compact := kit.CompactNum(pt.Value)
-		leader := ui.Dim.Render(strings.Repeat("·", countW-len(compact)))
+		leader := ui.Dim.Render(strings.Repeat("·", barGap+countW-len(compact)))
 		pct := "     "
 		if total > 0 {
 			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)
@@ -270,7 +274,7 @@ func (m Model) focusPanelBody(idx, width int) string {
 			marker, labelStyle = ui.Title.Render("▸ "), ui.Title
 		}
 		lines = append(lines, marker+labelStyle.Render(label)+" "+
-			ui.Bar(dashBarStyle, pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
+			ui.Bar(dashBarStyle, pt.Value, maxV, barMax-barGap, entityColor(pt.Label, panelHue))+
 			leader+compact+ui.Dim.Render(pct))
 	}
 	return strings.Join(lines, "\n")
