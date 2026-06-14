@@ -24,7 +24,6 @@
 - `Links Browser (TUI)` - Navigate, open, copy, edit, archive, and delete every link with a live analytics sidebar ✏️
 - `Analytics Dashboard` - Terminal charts: traffic over time with a previous-period overlay, browser/OS/country/city/referrer panels, drill-down filtering, range expressions, and full mouse support 📊
 - `QR Codes` - Render any link as a scannable QR code right in the terminal 📱
-- `Custom Domains` - Add, verify, configure (apex redirect, 404 fallback, robots.txt), and remove your own domains 🌐
 - `Export` - Download click data as JSON, CSV, XLSX, or XML 📤
 - `API Keys` - Create, list, and revoke keys for scripting 🔑
 - `Device-Flow Auth` - No keys to paste — sign in through the spoo.me device flow, sessions refresh for 30 days 🪪
@@ -73,12 +72,11 @@ spoo stats launch                                 # charts in your terminal
 
 | Command | What it does |
 |---|---|
-| `spoo shorten [url]` | Create a link — flags for alias, password, max clicks, expiry, bot blocking, custom domain, and `--qr` to print a scannable code. Interactive form with live alias availability when run bare. |
+| `spoo shorten [url]` | Create a link — flags for alias, password, max clicks, expiry, bot blocking, and `--qr` to print a scannable code. Interactive form with live alias availability when run bare. |
 | `spoo links` | Interactive TUI browser: navigate, open, copy, edit (`e`, pre-filled form), archive/activate (`t`), delete (`d`, type-the-alias confirm), QR (`Q`). `--json` or piping prints the list instead. `?` shows all keys. |
 | `spoo links update/delete <id>` | Scriptable link management (`delete` requires `--yes`). |
 | `spoo stats [code]` | Interactive analytics dashboard: time chart with previous-period overlay (`p`), browser/OS/country/city/referrer panels, drill-down filtering (enter or click any row), link switcher (`g`), range expressions (`T` — `7d`, `4h`, `now - 2w to now - 1w`, `2026-01-01 to 2026-02-15`), clicks↔unique toggle (`u`), full mouse support. Piped or `--plain` prints a static report; public stats work logged out. |
 | `spoo export [code]` | Download analytics as JSON, CSV (zip), XLSX, or XML. |
-| `spoo domains` | Custom domains: `add` (prints the DNS records to set), `verify`, `config` (apex redirect, 404 fallback, robots.txt), `remove`. |
 | `spoo keys` | API keys: `create` (token shown once), list, `revoke`. |
 | `spoo open <code>` | Open a short link in your browser. |
 | `spoo inspect <code>` | See where a link points **without** counting a click. |

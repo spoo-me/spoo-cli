@@ -40,7 +40,7 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(
 		newAuthCmd(), newWhoamiCmd(), newShortenCmd(),
 		newLinksCmd(), newStatsCmd(), newExportCmd(),
-		newDomainsCmd(), newKeysCmd(),
+		newKeysCmd(),
 		newOpenCmd(), newInspectCmd(), newQRCmd(),
 	)
 	return root
