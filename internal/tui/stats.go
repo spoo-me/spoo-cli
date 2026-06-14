@@ -1403,25 +1403,5 @@ func (m StatsModel) sidebarPreview(item, width, n int) []string {
 	return out
 }
 
-// padToWidth right-pads by display width (emoji-safe, unlike %-*s).
-func padToWidth(s string, w int) string {
-	if d := w - lipgloss.Width(s); d > 0 {
-		return s + strings.Repeat(" ", d)
-	}
-	return s
-}
-
-// truncateToWidth trims a string to at most w display columns.
-func truncateToWidth(s string, w int) string {
-	if lipgloss.Width(s) <= w {
-		return s
-	}
-	r := []rune(s)
-	for len(r) > 0 && lipgloss.Width(string(r))+1 > w {
-		r = r[:len(r)-1]
-	}
-	return string(r) + "…"
-}
-
 // FetchErr reports a fetch error so the command can surface it on exit.
 func (m StatsModel) FetchErr() error { return m.fetchErr }

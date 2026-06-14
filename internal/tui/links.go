@@ -782,19 +782,5 @@ func topOf(res *api.StatsResponse, dimension string, total float64, format func(
 	return name
 }
 
-func isoDate(s string) string {
-	if len(s) >= 10 {
-		return s[:10]
-	}
-	return s
-}
-
-func orNever(s string) string {
-	if s == "" {
-		return "never"
-	}
-	return s
-}
-
 // Err reports a fetch error that ended the session, if any.
 func (m LinksModel) Err() error { return m.err }
