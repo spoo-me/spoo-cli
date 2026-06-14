@@ -10,6 +10,7 @@ import (
 	tslc "github.com/NimbleMarkets/ntcharts/v2/linechart/timeserieslinechart"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -63,7 +64,7 @@ func (m StatsModel) View() tea.View {
 			tail, tailStyle = "✗ "+m.rangeErr, ui.Err
 		}
 		if room := m.width - lipgloss.Width(strip) - 2; room > 4 {
-			strip += "  " + tailStyle.Render(truncateToWidth(tail, room))
+			strip += "  " + tailStyle.Render(kit.TruncateToWidth(tail, room))
 		}
 		b.WriteString(strip)
 	case m.focusMode:
@@ -75,9 +76,9 @@ func (m StatsModel) View() tea.View {
 	content := b.String()
 	switch {
 	case m.exportBox.open:
-		content = overlayCenter(content, m.exportBox.view(m.width), m.width, m.height)
+		content = kit.Center(content, m.exportBox.view(m.width), m.width, m.height)
 	case m.switchMode:
-		content = overlayCenter(content, m.switcherView(), m.width, m.height)
+		content = kit.Center(content, m.switcherView(), m.width, m.height)
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true
@@ -92,7 +93,7 @@ func (m StatsModel) headerLine() string {
 	}
 	h := ui.Title.Render("✦ spoo stats") + ui.Dim.Render("  ·  ") + target
 	if m.res != nil && m.res.TimeRange.StartDate != "" {
-		h += ui.Dim.Render("  ·  " + isoDate(m.res.TimeRange.StartDate) + " → " + isoDate(m.res.TimeRange.EndDate))
+		h += ui.Dim.Render("  ·  " + kit.ISODate(m.res.TimeRange.StartDate) + " → " + kit.ISODate(m.res.TimeRange.EndDate))
 	} else {
 		h += ui.Dim.Render("  ·  last " + m.win.label)
 	}
@@ -133,7 +134,7 @@ func (m StatsModel) overviewBody() string {
 	s := m.res.Summary
 	labelW := min(20, max(13, m.overviewWidth()-20))
 	row := func(label, value string, style lipgloss.Style) string {
-		return ui.Dim.Render(padToWidth(label, labelW)) + style.Render(value)
+		return ui.Dim.Render(kit.PadToWidth(label, labelW)) + style.Render(value)
 	}
 	plain := lipgloss.NewStyle()
 
@@ -163,8 +164,8 @@ func (m StatsModel) overviewBody() string {
 	}
 	if s.FirstClick != "" {
 		rows = append(rows,
-			row("first click", isoDate(s.FirstClick), plain),
-			row("last click", isoDate(s.LastClick), plain))
+			row("first click", kit.ISODate(s.FirstClick), plain),
+			row("last click", kit.ISODate(s.LastClick), plain))
 	}
 	return strings.Join(rows, "\n")
 }
@@ -203,7 +204,7 @@ func (m StatsModel) bestDay() (string, bool) {
 		return "", false
 	}
 	day := best.Label
-	if ts, ok := parseBucketTime(best.Label); ok {
+	if ts, ok := kit.ParseBucketTime(best.Label); ok {
 		day = ts.Format("Jan 02")
 	}
 	return fmt.Sprintf("%s · %.0f", day, best.Value), true
@@ -215,7 +216,7 @@ func (m StatsModel) activeDays() (string, bool) {
 		if p.Value <= 0 {
 			continue
 		}
-		if ts, ok := parseBucketTime(p.Label); ok {
+		if ts, ok := kit.ParseBucketTime(p.Label); ok {
 			days[ts.Format("2006-01-02")] = true
 		}
 	}
@@ -252,7 +253,7 @@ func (m StatsModel) timeChart(width, height int) string {
 		out := make([]tslc.TimePoint, 0, len(pts))
 		var maxV float64
 		for _, p := range pts {
-			if ts, ok := parseBucketTime(p.Label); ok {
+			if ts, ok := kit.ParseBucketTime(p.Label); ok {
 				out = append(out, tslc.TimePoint{Time: ts, Value: p.Value})
 				maxV = max(maxV, p.Value)
 			}
@@ -282,7 +283,7 @@ func (m StatsModel) timeChart(width, height int) string {
 
 	// pad Y labels to the top value's width: ntcharts sizes the label
 	// gutter by sampling step labels and would clip a wider top label
-	yMax := niceCeil(maxV)
+	yMax := kit.NiceCeil(maxV)
 	yWidth := len(fmt.Sprintf("%.0f", yMax))
 	chart := tslc.New(max(40, width-2), max(6, height),
 		tslc.WithTimeSeries(clickSeries),
@@ -388,7 +389,7 @@ func (m StatsModel) sidebar(height int) string {
 // sidebarPreview renders up to n compact lines for a sidebar item.
 func (m StatsModel) sidebarPreview(item, width, n int) []string {
 	if item == 0 { // time chart → one-line sparkline
-		spark := miniSpark(m.res.Points("time", m.metric), width)
+		spark := kit.MiniSpark(m.res.Points("time", m.metric), width)
 		return []string{"  " + ui.OK.Render(spark)}[:min(1, n)]
 	}
 	p := m.panels()[item-1]
@@ -404,7 +405,7 @@ func (m StatsModel) sidebarPreview(item, width, n int) []string {
 	barW := max(4, width-labelW-1)
 	out := make([]string, 0, len(pts))
 	for _, pt := range pts {
-		label := padToWidth(truncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
+		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
 		out = append(out, "  "+ui.Dim.Render(label)+
 			ui.Bar(dashBarStyle, pt.Value, maxV, barW, entityColor(pt.Label, panelColors[p.key])))
 	}

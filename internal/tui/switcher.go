@@ -9,6 +9,7 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -114,7 +115,7 @@ func (m StatsModel) switcherView() string {
 		if selected {
 			marker, style = ui.Title.Render("▸ "), ui.Title
 		}
-		line := marker + style.Render(padToWidth(truncateToWidth(label, 28), 28))
+		line := marker + style.Render(kit.PadToWidth(kit.TruncateToWidth(label, 28), 28))
 		if note != "" {
 			line += " " + ui.Dim.Render(note)
 		}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -27,7 +28,7 @@ func (m LinksModel) analyticsLines(alias string, label func(string) string, widt
 		unique += ui.Dim.Render(fmt.Sprintf(" (%.0f%%)", rate))
 	}
 	return []string{
-		label("trend (90d)") + miniSpark(res.Points("time", "clicks"), max(20, width-24)),
+		label("trend (90d)") + kit.MiniSpark(res.Points("time", "clicks"), max(20, width-24)),
 		label("unique") + unique,
 		label("avg redirect") + fmt.Sprintf("%.0fms", res.Summary.AvgRedirectionTime),
 		label("top browser") + topOf(res, "browser", total, nil),

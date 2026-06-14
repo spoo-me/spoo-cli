@@ -1,4 +1,4 @@
-package tui
+package kit
 
 import (
 	"math"
@@ -9,8 +9,8 @@ import (
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
-// niceCeil rounds up to a 1/2/2.5/5×10ⁿ boundary so axis steps are even.
-func niceCeil(v float64) float64 {
+// NiceCeil rounds up to a 1/2/2.5/5×10ⁿ boundary so axis steps are even.
+func NiceCeil(v float64) float64 {
 	if v <= 5 {
 		return 5
 	}
@@ -34,7 +34,8 @@ var bucketTimeLayouts = []string{
 	"2006-01",
 }
 
-func parseBucketTime(label string) (time.Time, bool) {
+// ParseBucketTime parses a backend time-bucket label.
+func ParseBucketTime(label string) (time.Time, bool) {
 	for _, layout := range bucketTimeLayouts {
 		if ts, err := time.Parse(layout, label); err == nil {
 			return ts, true
@@ -43,10 +44,10 @@ func parseBucketTime(label string) (time.Time, bool) {
 	return time.Time{}, false
 }
 
-// miniSpark draws a compact sparkline covering the WHOLE series: when
+// MiniSpark draws a compact sparkline covering the WHOLE series: when
 // there are more points than columns they are summed into buckets, so
 // old activity is never silently cut off the left edge.
-func miniSpark(pts []api.MetricPoint, width int) string {
+func MiniSpark(pts []api.MetricPoint, width int) string {
 	if len(pts) == 0 || width < 1 {
 		return ui.Dim.Render("no data")
 	}

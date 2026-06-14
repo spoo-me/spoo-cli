@@ -6,6 +6,7 @@ import (
 
 	lipgloss "charm.land/lipgloss/v2"
 
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -44,9 +45,9 @@ func styledTable(ts tableStyle, labelIdx int, widths []int, header []string, row
 		parts := make([]string, len(cells))
 		for i, c := range cells {
 			if i == labelIdx {
-				parts[i] = padToWidth(truncateToWidth(c, w[i]), w[i])
+				parts[i] = kit.PadToWidth(kit.TruncateToWidth(c, w[i]), w[i])
 			} else {
-				parts[i] = fmt.Sprintf("%*s", w[i], truncateToWidth(c, w[i]))
+				parts[i] = fmt.Sprintf("%*s", w[i], kit.TruncateToWidth(c, w[i]))
 			}
 		}
 		return " " + strings.Join(parts, " ")
@@ -56,7 +57,7 @@ func styledTable(ts tableStyle, labelIdx int, widths []int, header []string, row
 	switch ts {
 	case tsHeaderBand, tsTreeBand:
 		// extend the band across the full panel width
-		out = append(out, tsBandBG.Render(padToWidth(fmtRow(header), width)))
+		out = append(out, tsBandBG.Render(kit.PadToWidth(fmtRow(header), width)))
 	case tsUnderline:
 		up := make([]string, len(header))
 		for i, h := range header {
@@ -90,7 +91,7 @@ func styledTable(ts tableStyle, labelIdx int, widths []int, header []string, row
 		// selected rows get ONE style over the whole plain line — a
 		// pre-styled branch would embed a reset that cuts it short
 		case i == sel && ts == tsSelectedBand:
-			line = tsSelBand.Render(padToWidth(content, width))
+			line = tsSelBand.Render(kit.PadToWidth(content, width))
 		case i == sel:
 			line = ui.Title.Render(content)
 		case tree:

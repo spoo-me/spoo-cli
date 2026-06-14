@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -77,11 +78,11 @@ func (m LinksModel) View() tea.View {
 	w, h := max(60, m.width), max(20, m.height)
 	switch {
 	case m.edit.open:
-		content = overlayCenter(content, m.edit.view(w), w, h)
+		content = kit.Center(content, m.edit.view(w), w, h)
 	case m.confirm.open:
-		content = overlayCenter(content, m.confirm.view(), w, h)
+		content = kit.Center(content, m.confirm.view(), w, h)
 	case m.qrURL != "":
-		content = overlayCenter(content, m.qrView(), w, max(h, lipgloss.Height(m.qrView())+2))
+		content = kit.Center(content, m.qrView(), w, max(h, lipgloss.Height(m.qrView())+2))
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true
@@ -119,8 +120,8 @@ func (m LinksModel) detailView(width int) string {
 		field("destination", it.LongURL),
 		"",
 		label("clicks") + strconv.Itoa(it.TotalClicks),
-		label("created") + isoDate(it.CreatedAt),
-		label("last click") + orNever(isoDate(it.LastClick)),
+		label("created") + kit.ISODate(it.CreatedAt),
+		label("last click") + kit.OrNever(kit.ISODate(it.LastClick)),
 		"",
 		label("password") + yesNo(it.PasswordSet),
 		label("private stats") + yesNo(it.PrivateStats),

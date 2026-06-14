@@ -1,75 +1,54 @@
 package tui
 
 import (
-	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
-	lipgloss "charm.land/lipgloss/v2"
-
-	"github.com/spoo-me/spoo-cli/internal/ui"
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 )
-
-// newHelp builds a help bubble in the dashboard's palette: keys at
-// hint gray, descriptions a step fainter.
-func newHelp() help.Model {
-	h := help.New()
-	h.Styles.ShortKey = lipgloss.NewStyle().Foreground(ui.Muted)
-	h.Styles.ShortDesc = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B7280"))
-	h.Styles.ShortSeparator = lipgloss.NewStyle().Foreground(lipgloss.Color("#3C4048"))
-	h.Styles.Ellipsis = h.Styles.ShortSeparator
-	h.Styles.FullKey = h.Styles.ShortKey
-	h.Styles.FullDesc = h.Styles.ShortDesc
-	h.Styles.FullSeparator = h.Styles.ShortSeparator
-	return h
-}
-
-func bind(keys, desc string) key.Binding {
-	return key.NewBinding(key.WithKeys(keys), key.WithHelp(keys, desc))
-}
 
 // statsDashKeys feeds the help bubble on the dashboard grid.
 type statsDashKeys struct{}
 
 func (statsDashKeys) ShortHelp() []key.Binding {
 	return []key.Binding{
-		bind("↑↓←→", "navigate"),
-		bind("enter", "drill down"),
-		bind("f", "focus"),
-		bind("g", "switch link"),
-		bind("t", "table"),
-		bind("T", "range"),
-		bind("u", "metric"),
-		bind("?", "more"),
-		bind("q", "quit"),
+		kit.Bind("↑↓←→", "navigate"),
+		kit.Bind("enter", "drill down"),
+		kit.Bind("f", "focus"),
+		kit.Bind("g", "switch link"),
+		kit.Bind("t", "table"),
+		kit.Bind("T", "range"),
+		kit.Bind("u", "metric"),
+		kit.Bind("?", "more"),
+		kit.Bind("q", "quit"),
 	}
 }
 
 func (statsDashKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{
-			bind("↑/↓", "select row"),
-			bind("←/→ tab", "switch chart"),
-			bind("enter", "drill down"),
-			bind("x", "undo filter"),
+			kit.Bind("↑/↓", "select row"),
+			kit.Bind("←/→ tab", "switch chart"),
+			kit.Bind("enter", "drill down"),
+			kit.Bind("x", "undo filter"),
 		},
 		{
-			bind("f", "focus mode"),
-			bind("g", "switch link"),
-			bind("t", "table view"),
-			bind("T", "time range"),
-			bind("[/]", "older/newer"),
+			kit.Bind("f", "focus mode"),
+			kit.Bind("g", "switch link"),
+			kit.Bind("t", "table view"),
+			kit.Bind("T", "time range"),
+			kit.Bind("[/]", "older/newer"),
 		},
 		{
-			bind("u", "clicks/unique"),
-			bind("p", "vs previous"),
-			bind("e", "export"),
-			bind("a", "auto-refresh"),
+			kit.Bind("u", "clicks/unique"),
+			kit.Bind("p", "vs previous"),
+			kit.Bind("e", "export"),
+			kit.Bind("a", "auto-refresh"),
 		},
 		{
-			bind("r", "refresh"),
-			bind("click", "focus/drill"),
-			bind("wheel", "scroll rows"),
-			bind("esc", "clear/quit"),
-			bind("q", "quit"),
+			kit.Bind("r", "refresh"),
+			kit.Bind("click", "focus/drill"),
+			kit.Bind("wheel", "scroll rows"),
+			kit.Bind("esc", "clear/quit"),
+			kit.Bind("q", "quit"),
 		},
 	}
 }
@@ -79,35 +58,35 @@ type statsFocusKeys struct{}
 
 func (statsFocusKeys) ShortHelp() []key.Binding {
 	return []key.Binding{
-		bind("←/→", "pane"),
-		bind("↑/↓", "rows/charts"),
-		bind("tab", "chart"),
-		bind("enter", "drill"),
-		bind("t", "table"),
-		bind("x", "close"),
-		bind("?", "more"),
+		kit.Bind("←/→", "pane"),
+		kit.Bind("↑/↓", "rows/charts"),
+		kit.Bind("tab", "chart"),
+		kit.Bind("enter", "drill"),
+		kit.Bind("t", "table"),
+		kit.Bind("x", "close"),
+		kit.Bind("?", "more"),
 	}
 }
 
 func (statsFocusKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{
-			bind("←/→", "main/sidebar"),
-			bind("↑/↓", "rows or charts"),
-			bind("tab", "next chart"),
-			bind("enter", "drill down"),
+			kit.Bind("←/→", "main/sidebar"),
+			kit.Bind("↑/↓", "rows or charts"),
+			kit.Bind("tab", "next chart"),
+			kit.Bind("enter", "drill down"),
 		},
 		{
-			bind("t", "table view"),
-			bind("T", "time range"),
-			bind("[/]", "older/newer"),
-			bind("u", "clicks/unique"),
+			kit.Bind("t", "table view"),
+			kit.Bind("T", "time range"),
+			kit.Bind("[/]", "older/newer"),
+			kit.Bind("u", "clicks/unique"),
 		},
 		{
-			bind("p", "vs previous"),
-			bind("e", "export"),
-			bind("r", "refresh"),
-			bind("x", "exit focus"),
+			kit.Bind("p", "vs previous"),
+			kit.Bind("e", "export"),
+			kit.Bind("r", "refresh"),
+			kit.Bind("x", "exit focus"),
 		},
 	}
 }
@@ -117,36 +96,36 @@ type linksKeys struct{}
 
 func (linksKeys) ShortHelp() []key.Binding {
 	return []key.Binding{
-		bind("↑/↓", "move"),
-		bind("enter", "details"),
-		bind("/", "search"),
-		bind("e", "edit"),
-		bind("t", "archive"),
-		bind("d", "delete"),
-		bind("?", "more"),
-		bind("q", "quit"),
+		kit.Bind("↑/↓", "move"),
+		kit.Bind("enter", "details"),
+		kit.Bind("/", "search"),
+		kit.Bind("e", "edit"),
+		kit.Bind("t", "archive"),
+		kit.Bind("d", "delete"),
+		kit.Bind("?", "more"),
+		kit.Bind("q", "quit"),
 	}
 }
 
 func (linksKeys) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{
-			bind("↑/↓", "move"),
-			bind("←/→", "pages"),
-			bind("enter", "details"),
-			bind("/", "search"),
+			kit.Bind("↑/↓", "move"),
+			kit.Bind("←/→", "pages"),
+			kit.Bind("enter", "details"),
+			kit.Bind("/", "search"),
 		},
 		{
-			bind("s", "sort"),
-			bind("o", "open in browser"),
-			bind("c", "copy short url"),
-			bind("e", "edit link"),
+			kit.Bind("s", "sort"),
+			kit.Bind("o", "open in browser"),
+			kit.Bind("c", "copy short url"),
+			kit.Bind("e", "edit link"),
 		},
 		{
-			bind("t", "archive/activate"),
-			bind("d", "delete"),
-			bind("Q", "qr code"),
-			bind("r", "refresh"),
+			kit.Bind("t", "archive/activate"),
+			kit.Bind("d", "delete"),
+			kit.Bind("Q", "qr code"),
+			kit.Bind("r", "refresh"),
 		},
 	}
 }

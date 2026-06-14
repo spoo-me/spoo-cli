@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -285,7 +286,7 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if it := m.selected(); it != nil {
 			m.confirm = m.confirm.askPhrase("delete", it.ID,
 				"Delete "+it.Alias+"?",
-				[]string{ui.Dim.Render("  → " + truncateToWidth(it.LongURL, 44)), "", ui.Dim.Render("  This can't be undone.")},
+				[]string{ui.Dim.Render("  → " + kit.TruncateToWidth(it.LongURL, 44)), "", ui.Dim.Render("  This can't be undone.")},
 				it.Alias)
 			return m, nil
 		}

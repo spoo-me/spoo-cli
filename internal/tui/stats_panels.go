@@ -6,6 +6,7 @@ import (
 
 	lipgloss "charm.land/lipgloss/v2"
 
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -69,7 +70,7 @@ func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
 		lines = append(lines, ui.Dim.Render("no data"))
 	}
 	for i, pt := range pts {
-		label := padToWidth(truncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
+		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
 
 		count := fmt.Sprintf("%5.0f", pt.Value)
 		pct := "     "
@@ -178,7 +179,7 @@ func styledTotals(widths []int, cells []string) string {
 	parts := make([]string, len(cells))
 	for i, c := range cells {
 		if i == 0 {
-			parts[i] = padToWidth(truncateToWidth(c, widths[i]), widths[i])
+			parts[i] = kit.PadToWidth(kit.TruncateToWidth(c, widths[i]), widths[i])
 		} else {
 			parts[i] = fmt.Sprintf("%*s", widths[i], c)
 		}
@@ -245,7 +246,7 @@ func (m StatsModel) focusPanelBody(idx, width int) string {
 
 	lines := make([]string, 0, len(pts))
 	for i, pt := range pts {
-		label := padToWidth(truncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
+		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
 		count := fmt.Sprintf("%5.0f", pt.Value)
 		pct := "     "
 		if total > 0 {

@@ -14,6 +14,7 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -120,7 +121,7 @@ func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, open
 		searchBox:   search,
 		edit:        newEditForm(),
 		confirm:     newConfirmDialog(),
-		helper:      newHelp(),
+		helper:      kit.NewHelp(),
 		stats:       map[string]statsEntry{},
 		pageNo:      max(1, opts.Page),
 		loading:     true,
@@ -220,7 +221,7 @@ func (m LinksModel) rows() []table.Row {
 			it.LongURL,
 			strconv.Itoa(it.TotalClicks),
 			it.Status,
-			isoDate(it.CreatedAt),
+			kit.ISODate(it.CreatedAt),
 		})
 	}
 	return rows

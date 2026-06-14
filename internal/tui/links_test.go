@@ -13,6 +13,7 @@ import (
 
 	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/auth"
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 )
 
 func newLinksModelWithPage(t *testing.T, srvURL string) LinksModel {
@@ -401,7 +402,7 @@ func TestMiniSparkDownsamplesWholeSeries(t *testing.T) {
 		pts[i] = api.MetricPoint{Label: "d", Value: 0}
 	}
 	pts[3].Value = 28 // old spike, far outside the last 30 columns
-	got := miniSpark(pts, 30)
+	got := kit.MiniSpark(pts, 30)
 	if strings.Contains(got, "flat") {
 		t.Fatalf("old spike was cut off: %q", got)
 	}

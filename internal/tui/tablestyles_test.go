@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -19,7 +20,7 @@ func TestTreeSelectedRowFullyStyled(t *testing.T) {
 	lines := strings.Split(out, "\n")
 	selLine := lines[1] // header is line 0
 
-	want := ui.Title.Render(" ├─ " + padToWidth("Chrome", 7) + " " + "    49" + " " + "   91%")
+	want := ui.Title.Render(" ├─ " + kit.PadToWidth("Chrome", 7) + " " + "    49" + " " + "   91%")
 	if selLine != want {
 		t.Fatalf("selected tree row not one styled run:\n got %q\nwant %q", selLine, want)
 	}

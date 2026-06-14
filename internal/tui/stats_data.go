@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -120,7 +121,7 @@ func (m StatsModel) panelPoints(idx, n int) []api.MetricPoint {
 func (m StatsModel) weekdayPoints() []api.MetricPoint {
 	var totals [7]float64
 	for _, p := range m.res.Points("time", m.metric) {
-		if ts, ok := parseBucketTime(p.Label); ok {
+		if ts, ok := kit.ParseBucketTime(p.Label); ok {
 			totals[int(ts.Weekday())] += p.Value
 		}
 	}

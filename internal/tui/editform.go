@@ -14,6 +14,7 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -261,7 +262,7 @@ func (e editForm) summary(changes map[string]any) []string {
 		if k == "password" {
 			shown = "••••••"
 		}
-		lines = append(lines, "  "+label[k]+" → "+truncateToWidth(shown, 40))
+		lines = append(lines, "  "+label[k]+" → "+kit.TruncateToWidth(shown, 40))
 	}
 	return lines
 }

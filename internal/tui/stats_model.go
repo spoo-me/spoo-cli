@@ -10,6 +10,7 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
+	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -129,7 +130,7 @@ func NewStats(client *api.Client, target, scope, tz string) StatsModel {
 		rangeBox:  rangeBox,
 		switchBox: switchBox,
 		exportBox: newExportModal(),
-		helper:    newHelp(),
+		helper:    kit.NewHelp(),
 		metric:    "clicks",
 		sel:       map[int]int{},
 		tableOn:   map[string]bool{},
