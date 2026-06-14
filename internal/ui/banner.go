@@ -1,22 +1,20 @@
 package ui
 
 import (
+	_ "embed"
 	"image/color"
 	"strings"
 
 	lipgloss "charm.land/lipgloss/v2"
 )
 
-// ghostArt is the spoo mascot in blocks: a capped dome, gradient body,
-// and notched feet — faceless, like the logo.
-var ghostArt = []string{
-	" ▄███▄ ",
-	"███████",
-	"███████",
-	"███████",
-	"███████",
-	"█ █ █ █",
-}
+// ghostArt is the spoo mascot — a density-ASCII render of the logo
+// (ascii-image-converter, W=22). Regenerate with:
+//
+//	ascii-image-converter <white-ghost-on-black>.png -W 22
+//
+//go:embed ghost.txt
+var ghostArt string
 
 // ghostGradient runs vivid violet (top) → lavender (bottom), matching
 // the logo's vertical fade.
@@ -29,19 +27,20 @@ var ghostGradient = []color.Color{
 	lipgloss.Color("#DDD6FE"),
 }
 
-// Banner renders the ghost beside the spoo wordmark and tagline.
+// Banner renders the gradient ghost beside the spoo wordmark.
 func Banner() string {
-	lines := make([]string, len(ghostArt))
-	for i, ln := range ghostArt {
-		c := ghostGradient[min(i, len(ghostGradient)-1)]
-		lines[i] = lipgloss.NewStyle().Foreground(c).Render(ln)
+	rows := strings.Split(strings.TrimRight(ghostArt, "\n"), "\n")
+	n := len(rows)
+	for i, ln := range rows {
+		c := ghostGradient[min(i*len(ghostGradient)/max(1, n), len(ghostGradient)-1)]
+		rows[i] = lipgloss.NewStyle().Foreground(c).Render(ln)
 	}
-	ghost := strings.Join(lines, "\n")
+	ghost := strings.Join(rows, "\n")
 
 	wordmark := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#E5E7EB")).Render("spoo") +
 		"\n" + Dim.Render("the spoo.me CLI")
-	// vertically center the wordmark against the ghost
-	wordmark = "\n\n" + wordmark
+	// drop the wordmark to roughly the ghost's vertical center
+	wordmark = strings.Repeat("\n", max(0, n/2-1)) + wordmark
 
 	return lipgloss.JoinHorizontal(lipgloss.Top, ghost, "   ", wordmark)
 }
