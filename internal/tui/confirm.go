@@ -94,10 +94,8 @@ func (c confirmDialog) view() string {
 		matched := c.input.Value() == c.phrase
 		hint := ui.Dim.Render("type ") + ui.Title.Render(c.phrase) + ui.Dim.Render(" to confirm")
 		out = append(out, "", hint, c.input.View())
-		action := ui.Dim.Render("enter delete")
-		if !matched {
-			action = lipgloss.NewStyle().Foreground(ui.Muted).Render("enter delete")
-		} else {
+		action := lipgloss.NewStyle().Foreground(ui.Muted).Render("enter delete")
+		if matched {
 			action = ui.Err.Render("enter delete")
 		}
 		out = append(out, "", action+ui.Dim.Render(" · esc cancel"))
