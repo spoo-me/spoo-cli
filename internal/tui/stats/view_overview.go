@@ -29,13 +29,13 @@ func (c overviewCard) render() string {
 	}
 	plain := lipgloss.NewStyle()
 
-	clicksRow := row("clicks", fmt.Sprintf("%d", s.TotalClicks), ui.OK)
+	clicksRow := row("clicks", kit.CompactNum(float64(s.TotalClicks)), ui.OK)
 	if delta := c.deltaBadge(); delta != "" {
 		clicksRow += "  " + delta
 	}
 	rows := []string{
 		clicksRow,
-		row("unique", fmt.Sprintf("%d", s.UniqueClicks), plain),
+		row("unique", kit.CompactNum(float64(s.UniqueClicks)), plain),
 		row("avg redirect", fmt.Sprintf("%.0fms", s.AvgRedirectionTime), plain),
 	}
 	if rate, ok := c.res.ComputedMetrics["unique_click_rate"]; ok {
@@ -98,7 +98,7 @@ func (c overviewCard) bestDay() (string, bool) {
 	if ts, ok := kit.ParseBucketTime(best.Label); ok {
 		day = ts.Format("Jan 02")
 	}
-	return fmt.Sprintf("%s · %.0f", day, best.Value), true
+	return fmt.Sprintf("%s · %s", day, kit.CompactNum(best.Value)), true
 }
 
 func (c overviewCard) activeDays() (string, bool) {

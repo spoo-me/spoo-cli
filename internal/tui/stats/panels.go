@@ -63,10 +63,10 @@ func (m Model) panelView(idx, width, contentRows, topN int) string {
 		labelW = max(labelW, lipgloss.Width(m.rowLabel(p.key, pt.Label))+1)
 	}
 	labelW = min(labelW, max(10, innerW/3))
-	// the count column hugs the widest value so 6-digit counts don't wrap
-	countW := 5
+	// the count column hugs the widest (compact) value
+	countW := 3
 	for _, pt := range pts {
-		countW = max(countW, len(fmt.Sprintf("%.0f", pt.Value)))
+		countW = max(countW, len(kit.CompactNum(pt.Value)))
 	}
 	barMax := max(8, innerW-labelW-2-countW-5-1) // -5: pct column, -1: gap
 
@@ -77,7 +77,7 @@ func (m Model) panelView(idx, width, contentRows, topN int) string {
 	for i, pt := range pts {
 		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
 
-		count := fmt.Sprintf("%*.0f", countW, pt.Value)
+		count := fmt.Sprintf("%*s", countW, kit.CompactNum(pt.Value))
 		pct := "     "
 		if total > 0 {
 			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)
@@ -247,16 +247,16 @@ func (m Model) focusPanelBody(idx, width int) string {
 		labelW = max(labelW, lipgloss.Width(m.rowLabel(p.key, pt.Label))+1)
 	}
 	labelW = min(labelW, max(12, innerW*2/5))
-	countW := 5
+	countW := 3
 	for _, pt := range pts {
-		countW = max(countW, len(fmt.Sprintf("%.0f", pt.Value)))
+		countW = max(countW, len(kit.CompactNum(pt.Value)))
 	}
 	barMax := max(10, innerW-labelW-countW-5-1-2) // -5: pct, -2: selection marker
 
 	lines := make([]string, 0, len(pts))
 	for i, pt := range pts {
 		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
-		count := fmt.Sprintf("%*.0f", countW, pt.Value)
+		count := fmt.Sprintf("%*s", countW, kit.CompactNum(pt.Value))
 		pct := "     "
 		if total > 0 {
 			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)

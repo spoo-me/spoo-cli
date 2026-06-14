@@ -92,13 +92,13 @@ func (c timeChartView) render(width, height int) string {
 	// pad Y labels to the top value's width: ntcharts sizes the label
 	// gutter by sampling step labels and would clip a wider top label
 	yMax := kit.NiceCeil(maxV)
-	yWidth := len(fmt.Sprintf("%.0f", yMax))
+	yWidth := len(kit.CompactNum(yMax))
 	chart := tslc.New(max(40, width-2), max(6, height),
 		tslc.WithTimeSeries(clickSeries),
 		tslc.WithYRange(0, yMax),
 		tslc.WithXYSteps(10, 4),
 		tslc.WithYLabelFormatter(func(_ int, v float64) string {
-			return fmt.Sprintf("%*.0f", yWidth, v)
+			return fmt.Sprintf("%*s", yWidth, kit.CompactNum(v))
 		}),
 		tslc.WithAxesStyles(ui.Dim, ui.Dim),
 		tslc.WithStyle(chartClicks),
