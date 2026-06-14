@@ -77,7 +77,10 @@ func (m Model) panelView(idx, width, contentRows, topN int) string {
 	for i, pt := range pts {
 		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
 
-		count := fmt.Sprintf("%*s", countW, kit.CompactNum(pt.Value))
+		// dotted leader fills the count's right-align padding so the bar's
+		// track runs continuously up to every number, no floating gap
+		compact := kit.CompactNum(pt.Value)
+		leader := ui.Dim.Render(strings.Repeat("·", countW-len(compact)))
 		pct := "     "
 		if total > 0 {
 			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)
@@ -89,7 +92,7 @@ func (m Model) panelView(idx, width, contentRows, topN int) string {
 		}
 		lines = append(lines, marker+labelStyle.Render(label)+" "+
 			ui.Bar(dashBarStyle, pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
-			count+ui.Dim.Render(pct))
+			leader+compact+ui.Dim.Render(pct))
 	}
 	return m.boxed(p.title, strings.Join(lines, "\n"), width, contentRows+3, focused, panelHue)
 }
@@ -256,7 +259,8 @@ func (m Model) focusPanelBody(idx, width int) string {
 	lines := make([]string, 0, len(pts))
 	for i, pt := range pts {
 		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
-		count := fmt.Sprintf("%*s", countW, kit.CompactNum(pt.Value))
+		compact := kit.CompactNum(pt.Value)
+		leader := ui.Dim.Render(strings.Repeat("·", countW-len(compact)))
 		pct := "     "
 		if total > 0 {
 			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)
@@ -267,7 +271,7 @@ func (m Model) focusPanelBody(idx, width int) string {
 		}
 		lines = append(lines, marker+labelStyle.Render(label)+" "+
 			ui.Bar(dashBarStyle, pt.Value, maxV, barMax, entityColor(pt.Label, panelHue))+
-			count+ui.Dim.Render(pct))
+			leader+compact+ui.Dim.Render(pct))
 	}
 	return strings.Join(lines, "\n")
 }
