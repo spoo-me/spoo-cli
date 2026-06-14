@@ -6,12 +6,14 @@ import (
 
 	lipgloss "charm.land/lipgloss/v2"
 
+	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
-// barGap is the minimum dim margin a coloured bar leaves before its number.
-const barGap = 2
+// barGap is the blank margin between a bar's dotted trail and its number,
+// so neither the coloured fill nor the dim dots ever touch the digits.
+const barGap = 1
 
 // panelGrid lays the breakdown panels out in responsive columns. A
 // one-column gutter visually matches the stacked borders between rows
@@ -45,12 +47,43 @@ func (m Model) panelView(idx, width, contentRows, topN int) string {
 	}
 
 	pts := m.panelPoints(idx, topN)
-	var maxV float64
+	// tight columns: the label column hugs the longest visible label,
+	// the count column the widest compact value
+	labelW := 8
+	for _, pt := range pts {
+		labelW = max(labelW, lipgloss.Width(m.rowLabel(p.key, pt.Label))+1)
+	}
+	labelW = min(labelW, max(10, innerW/3))
+	countW := 3
+	for _, pt := range pts {
+		countW = max(countW, len(kit.CompactNum(pt.Value)))
+	}
+	barMax := max(8, innerW-labelW-countW-2-1-5-barGap) // 2 marker · 1 label gap · 5 pct · barGap
+
+	sel := -1
+	if focused {
+		sel = m.sel[idx]
+	}
+	lines := m.barLines(p.key, pts, labelW, barMax, countW, sel)
+	if len(lines) == 0 {
+		lines = []string{ui.Dim.Render("no data")}
+	}
+	return m.boxed(p.title, strings.Join(lines, "\n"), width, contentRows+3, focused, panelColors[p.key])
+}
+
+// barLines renders breakdown points as bar rows: the label, a bar whose
+// coloured fill fades into a dim track + leader that runs up to a
+// right-aligned compact count, then the share. A barGap space sits
+// between the trail and the number so neither the fill nor the dots ever
+// touch the digits. maxV/total (scaling the bars and shares) are derived
+// from the points; sel highlights one row (-1 for none).
+func (m Model) barLines(panelKey string, pts []api.MetricPoint, labelW, barMax, countW, sel int) []string {
+	var maxV, total float64
 	for _, pt := range pts {
 		maxV = max(maxV, pt.Value)
 	}
-	total := m.metricTotal()
-	if p.key == "weekday" {
+	total = m.metricTotal()
+	if panelKey == "weekday" {
 		// weekday buckets span the whole series; their own sum is the
 		// honest denominator (the summary total can differ on bucketing)
 		total = 0
@@ -58,47 +91,26 @@ func (m Model) panelView(idx, width, contentRows, topN int) string {
 			total += pt.Value
 		}
 	}
-	panelHue := panelColors[p.key]
+	hue := panelColors[panelKey]
 
-	// tight columns: the label column hugs the longest visible label
-	labelW := 8
-	for _, pt := range pts {
-		labelW = max(labelW, lipgloss.Width(m.rowLabel(p.key, pt.Label))+1)
-	}
-	labelW = min(labelW, max(10, innerW/3))
-	// the count column hugs the widest (compact) value
-	countW := 3
-	for _, pt := range pts {
-		countW = max(countW, len(kit.CompactNum(pt.Value)))
-	}
-	barMax := max(8, innerW-labelW-2-countW-5-1) // -5: pct column, -1: gap
-
-	lines := make([]string, 0, contentRows)
-	if len(pts) == 0 {
-		lines = append(lines, ui.Dim.Render("no data"))
-	}
+	lines := make([]string, 0, len(pts))
 	for i, pt := range pts {
-		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
-
-		// cap the coloured bar 2 cells short so it never touches the number;
-		// the dim track + leader fills that margin and the right-align
-		// padding, so every row reads the same with no floating gap
+		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(panelKey, pt.Label), labelW), labelW)
 		compact := kit.CompactNum(pt.Value)
-		leader := ui.Dim.Render(strings.Repeat("·", barGap+countW-len(compact)))
+		leader := ui.Dim.Render(strings.Repeat("·", countW-len(compact)))
 		pct := "     "
 		if total > 0 {
 			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)
 		}
-
 		marker, labelStyle := "  ", lipgloss.NewStyle()
-		if focused && i == m.sel[idx] {
+		if i == sel {
 			marker, labelStyle = ui.Title.Render("▸ "), ui.Title
 		}
 		lines = append(lines, marker+labelStyle.Render(label)+" "+
-			ui.Bar(dashBarStyle, pt.Value, maxV, barMax-barGap, entityColor(pt.Label, panelHue))+
-			leader+compact+ui.Dim.Render(pct))
+			ui.Bar(dashBarStyle, pt.Value, maxV, barMax, entityColor(pt.Label, hue))+
+			leader+strings.Repeat(" ", barGap)+compact+ui.Dim.Render(pct))
 	}
-	return m.boxed(p.title, strings.Join(lines, "\n"), width, contentRows+3, focused, panelHue)
+	return lines
 }
 
 // rowLabel normalizes a point label for display.
@@ -236,19 +248,6 @@ func (m Model) focusPanelBody(idx, width int) string {
 	if len(pts) == 0 {
 		return ui.Dim.Render("no data")
 	}
-	var maxV float64
-	for _, pt := range pts {
-		maxV = max(maxV, pt.Value)
-	}
-	total := m.metricTotal()
-	if p.key == "weekday" {
-		total = 0
-		for _, pt := range pts {
-			total += pt.Value
-		}
-	}
-	panelHue := panelColors[p.key]
-
 	labelW := 10
 	for _, pt := range pts {
 		labelW = max(labelW, lipgloss.Width(m.rowLabel(p.key, pt.Label))+1)
@@ -258,24 +257,11 @@ func (m Model) focusPanelBody(idx, width int) string {
 	for _, pt := range pts {
 		countW = max(countW, len(kit.CompactNum(pt.Value)))
 	}
-	barMax := max(10, innerW-labelW-countW-5-1-2) // -5: pct, -2: selection marker
+	barMax := max(10, innerW-labelW-countW-2-1-5-barGap) // 2 marker · 1 label gap · 5 pct · barGap
 
-	lines := make([]string, 0, len(pts))
-	for i, pt := range pts {
-		label := kit.PadToWidth(kit.TruncateToWidth(m.rowLabel(p.key, pt.Label), labelW), labelW)
-		compact := kit.CompactNum(pt.Value)
-		leader := ui.Dim.Render(strings.Repeat("·", barGap+countW-len(compact)))
-		pct := "     "
-		if total > 0 {
-			pct = fmt.Sprintf("%4.0f%%", pt.Value/total*100)
-		}
-		marker, labelStyle := "  ", lipgloss.NewStyle()
-		if m.focusPane == 0 && i == m.sel[idx] {
-			marker, labelStyle = ui.Title.Render("▸ "), ui.Title
-		}
-		lines = append(lines, marker+labelStyle.Render(label)+" "+
-			ui.Bar(dashBarStyle, pt.Value, maxV, barMax-barGap, entityColor(pt.Label, panelHue))+
-			leader+compact+ui.Dim.Render(pct))
+	sel := -1
+	if m.focusPane == 0 {
+		sel = m.sel[idx]
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(m.barLines(p.key, pts, labelW, barMax, countW, sel), "\n")
 }
