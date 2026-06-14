@@ -7,3 +7,4 @@ coverage.out
 spoo-*-export.*
 docs/superpowers/plans/
 .DS_Store
+/completions/

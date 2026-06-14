@@ -6,6 +6,8 @@ project_name: spoo
 before:
   hooks:
     - sh -c "mkdir -p manpages && go run ./cmd/spoo man | gzip -9 -c > manpages/spoo.1.gz"
+    # generate shell completion scripts once; shared by the cask + nfpms
+    - sh -c "mkdir -p completions && for s in bash zsh fish; do go run ./cmd/spoo completion $s > completions/spoo.$s; done"
 
 builds:
   - id: spoo
@@ -19,6 +21,12 @@ builds:
 
 archives:
   - formats: [tar.gz]
+    # the cask installs completions from inside the archive, so they must
+    # be bundled; setting `files` overrides the defaults, hence the globs
+    files:
+      - LICENSE*
+      - README*
+      - completions/*
     format_overrides:
       - goos: windows
         formats: [zip]
@@ -32,6 +40,12 @@ nfpms:
     contents:
       - src: manpages/spoo.1.gz
         dst: /usr/share/man/man1/spoo.1.gz
+      - src: completions/spoo.bash
+        dst: /usr/share/bash-completion/completions/spoo
+      - src: completions/spoo.zsh
+        dst: /usr/share/zsh/site-functions/_spoo
+      - src: completions/spoo.fish
+        dst: /usr/share/fish/vendor_completions.d/spoo.fish
 
 checksum:
   name_template: checksums.txt
@@ -51,10 +65,12 @@ homebrew_casks:
       email: admin@spoo.me
     homepage: https://spoo.me
     description: The official command-line client for spoo.me
-    # runs `spoo completion <shell>` during release and bundles the
-    # scripts into the cask, so `brew install spoo-me/tap/spoo` wires up
-    # bash/zsh/fish completion with no manual steps (GoReleaser ≥ v2.15)
-    generate_completions_from_executable: true
+    # install the pre-generated scripts so `brew install spoo-me/tap/spoo`
+    # wires up bash/zsh/fish completion with no manual steps
+    completions:
+      bash: completions/spoo.bash
+      zsh: completions/spoo.zsh
+      fish: completions/spoo.fish
 
 # Publishes the manifest to spoo-me/scoop-bucket (same TAP_GITHUB_TOKEN).
 scoops:
