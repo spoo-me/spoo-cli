@@ -2,6 +2,7 @@ package stats
 
 import (
 	"charm.land/bubbles/v2/key"
+
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 )
 

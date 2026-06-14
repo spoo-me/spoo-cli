@@ -25,3 +25,16 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      # keep the stdlib / third-party / spoo-me import groups separated
+      local-prefixes:
+        - github.com/spoo-me/spoo-cli
+  exclusions:
+    paths:
+      - catalogue
