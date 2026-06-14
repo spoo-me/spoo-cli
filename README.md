@@ -32,15 +32,28 @@
 
 # 📦 Installation
 
-### With Go
+### Homebrew (macOS / Linux)
+
+```bash
+brew install spoo-me/tap/spoo
+```
+
+### Scoop (Windows)
+
+```powershell
+scoop bucket add spoo-me https://github.com/spoo-me/scoop-bucket
+scoop install spoo
+```
+
+### Go
 
 ```bash
 go install github.com/spoo-me/spoo-cli/cmd/spoo@latest
 ```
 
-### Prebuilt binary
+### Binary & Linux packages
 
-Grab a binary for macOS, Linux, or Windows from the [releases page](https://github.com/spoo-me/spoo-cli/releases). Homebrew and Scoop packages land with the first tagged release.
+Grab a binary for macOS, Linux, or Windows — or a `.deb`, `.rpm`, or `.apk` package — from the [releases page](https://github.com/spoo-me/spoo-cli/releases).
 
 > [!TIP]
 > Point the CLI at a self-hosted instance any time with `export SPOO_API_URL=http://localhost:8000`.
