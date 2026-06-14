@@ -1,6 +1,12 @@
 version: 2
 project_name: spoo
 
+# Generate the man page once before building; fang's `man` command
+# emits roff to stdout, which we gzip into the conventional location.
+before:
+  hooks:
+    - sh -c "mkdir -p manpages && go run ./cmd/spoo man | gzip -9 -c > manpages/spoo.1.gz"
+
 builds:
   - id: spoo
     main: ./cmd/spoo
@@ -23,6 +29,9 @@ nfpms:
     homepage: https://spoo.me
     license: Apache-2.0
     maintainer: spoo.me <support@spoo.me>
+    contents:
+      - src: manpages/spoo.1.gz
+        dst: /usr/share/man/man1/spoo.1.gz
 
 checksum:
   name_template: checksums.txt
@@ -40,6 +49,7 @@ changelog:
 #     homepage: https://spoo.me
 #     description: The official command-line client for spoo.me
 #     license: Apache-2.0
+#     manpages: manpages/spoo.1.gz
 
 # Uncomment once the spoo-me/scoop-bucket repo exists.
 # scoops:

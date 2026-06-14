@@ -1,5 +1,6 @@
 /spoo
 /dist/
+/manpages/
 *.test
 coverage.out
 /catalogue/

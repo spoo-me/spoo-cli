@@ -20,6 +20,7 @@ func newShortenCmd() *cobra.Command {
 	var (
 		req     api.ShortenRequest
 		expires string
+		showQR  bool
 	)
 	cmd := &cobra.Command{
 		Use:   "shorten [url]",
@@ -31,6 +32,7 @@ shortens every non-empty line (one short URL per line out). With no
 argument on a terminal, opens an interactive form.`,
 		Example: `  spoo shorten https://example.com/very/long/path
   spoo shorten https://example.com --alias launch --expires 72h
+  spoo shorten https://example.com --qr
   cat urls.txt | spoo shorten
   spoo shorten`,
 		Args: cobra.MaximumNArgs(1),
@@ -47,14 +49,14 @@ argument on a terminal, opens an interactive form.`,
 			switch {
 			case len(args) == 1:
 				req.LongURL = args[0]
-				return shortenOne(cmd, d, req, asJSON)
+				return shortenOne(cmd, d, req, asJSON, showQR)
 			case !stdinIsTerminal(cmd):
 				return shortenLines(cmd, d, req, asJSON)
 			default:
 				if err := runShortenForm(cmd.Context(), d.client, &req); err != nil {
 					return err
 				}
-				return shortenOne(cmd, d, req, asJSON)
+				return shortenOne(cmd, d, req, asJSON, showQR)
 			}
 		},
 	}
@@ -65,6 +67,7 @@ argument on a terminal, opens an interactive form.`,
 	cmd.Flags().BoolVar(&req.BlockBots, "block-bots", false, "block known bot user agents")
 	cmd.Flags().BoolVar(&req.PrivateStats, "private-stats", false, "make stats private (requires login)")
 	cmd.Flags().StringVar(&req.Domain, "domain", "", "use one of your custom domains")
+	cmd.Flags().BoolVar(&showQR, "qr", false, "also print a scannable QR code for the new link")
 	return cmd
 }
 
@@ -78,12 +81,12 @@ func stdoutIsTerminal(cmd *cobra.Command) bool {
 	return ok && term.IsTerminal(int(f.Fd()))
 }
 
-func shortenOne(cmd *cobra.Command, d *deps, req api.ShortenRequest, asJSON bool) error {
+func shortenOne(cmd *cobra.Command, d *deps, req api.ShortenRequest, asJSON, showQR bool) error {
 	res, err := d.client.Shorten(cmd.Context(), req)
 	if err != nil {
 		return err
 	}
-	return printShortURL(cmd, res, asJSON)
+	return printShortURL(cmd, res, asJSON, showQR)
 }
 
 // shortenLines shortens each non-empty stdin line with the same flag
@@ -120,7 +123,7 @@ func shortenLines(cmd *cobra.Command, d *deps, base api.ShortenRequest, asJSON b
 	return nil
 }
 
-func printShortURL(cmd *cobra.Command, res *api.ShortURL, asJSON bool) error {
+func printShortURL(cmd *cobra.Command, res *api.ShortURL, asJSON, showQR bool) error {
 	out := cmd.OutOrStdout()
 	if asJSON {
 		enc := json.NewEncoder(out)
@@ -128,12 +131,23 @@ func printShortURL(cmd *cobra.Command, res *api.ShortURL, asJSON bool) error {
 		return enc.Encode(res)
 	}
 	if !stdoutIsTerminal(cmd) {
-		_, err := io.WriteString(out, res.ShortURL+"\n")
-		return err
+		// piped: the short URL is the payload; a QR still prints below
+		// it on request so `spoo shorten … --qr | …` stays useful
+		if _, err := io.WriteString(out, res.ShortURL+"\n"); err != nil {
+			return err
+		}
+		if showQR {
+			_, err := io.WriteString(out, ui.QR(res.ShortURL, false)+"\n")
+			return err
+		}
+		return nil
 	}
 	body := ui.OK.Render("✓ Link created") + "\n\n" +
 		ui.Title.Render(res.ShortURL) + "\n" +
 		ui.Dim.Render("→ "+truncate(res.LongURL, 60))
+	if showQR {
+		body += "\n\n" + ui.QR(res.ShortURL, false)
+	}
 	fmt.Fprintln(prettyOut(cmd), ui.Box.Render(body))
 	return nil
 }
