@@ -9,8 +9,8 @@ import (
 // effect: every cell keeps its glyph but loses its color.
 var backdropFg = lipgloss.Color("#3F4450")
 
-// DimBackdrop repaints all of bg's cells in the backdrop gray.
-func DimBackdrop(bg string, width, height int) string {
+// dimBackdrop repaints all of bg's cells in the backdrop gray.
+func dimBackdrop(bg string, width, height int) string {
 	canvas := lipgloss.NewCanvas(width, height)
 	canvas.Compose(lipgloss.NewLayer(bg))
 	for y := range height {
@@ -29,7 +29,7 @@ func DimBackdrop(bg string, width, height int) string {
 // but drops to the backdrop gray so the dialog owns the eye.
 func Center(bg, fg string, width, height int) string {
 	return lipgloss.NewCompositor(
-		lipgloss.NewLayer(DimBackdrop(bg, width, height)),
+		lipgloss.NewLayer(dimBackdrop(bg, width, height)),
 		lipgloss.NewLayer(fg).
 			X(max(0, (width-lipgloss.Width(fg))/2)).
 			Y(max(0, (height-lipgloss.Height(fg))/2)).

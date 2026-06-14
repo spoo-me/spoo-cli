@@ -9,6 +9,29 @@ import (
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
+// dashBarStyle is the bar style used across the dashboard (picked from
+// a live A/B of six candidates).
+const dashBarStyle = ui.BarUpperHalf
+
+// chartClicks / chartUnique are the time chart's series duo: sky for
+// clicks, pink for unique.
+var (
+	chartClicks = lipgloss.NewStyle().Foreground(ui.Blue)
+	chartUnique = lipgloss.NewStyle().Foreground(ui.Pink)
+)
+
+// panelColors gives every panel its own pastel hue; the entity brand
+// colors below override per row where the label is known.
+var panelColors = map[string]color.Color{
+	"short_code": ui.Accent,
+	"browser":    ui.Success,
+	"os":         ui.Blue,
+	"country":    ui.Yellow,
+	"city":       ui.Pink,
+	"referrer":   ui.Teal,
+	"weekday":    ui.Accent,
+}
+
 // hueSaturated maps each panel pastel to its saturated cut — focused
 // panels wear it on both border and title. Picked in the focus-style
 // A/B over solid violet, thick/double borders, edge accents, and dim

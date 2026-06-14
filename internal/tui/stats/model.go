@@ -1,17 +1,14 @@
 package stats
 
 import (
-	"image/color"
 	"time"
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	lipgloss "charm.land/lipgloss/v2"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
-	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
 const (
@@ -28,28 +25,6 @@ const (
 var defaultWindow = timeWindow{span: api.MaxRangeDays * 24 * time.Hour, label: "90d"}
 
 type panelDef struct{ key, title string }
-
-// dashBarStyle is the bar style used across the dashboard (picked from
-// a live A/B of six candidates).
-const dashBarStyle = ui.BarUpperHalf
-
-// panelColors gives every panel its own pastel hue (entity brand
-// colors in colors.go override per row where known).
-// the time chart's series duo: sky for clicks, pink for unique
-var (
-	chartClicks = lipgloss.NewStyle().Foreground(ui.Blue)
-	chartUnique = lipgloss.NewStyle().Foreground(ui.Pink)
-)
-
-var panelColors = map[string]color.Color{
-	"short_code": ui.Accent,
-	"browser":    ui.Success,
-	"os":         ui.Blue,
-	"country":    ui.Yellow,
-	"city":       ui.Pink,
-	"referrer":   ui.Teal,
-	"weekday":    ui.Accent,
-}
 
 type statsLoadedMsg struct {
 	res  *api.StatsResponse
