@@ -14,9 +14,10 @@ import (
 
 func newOpenCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "open <short-code>",
-		Short: "Open a short link in your browser",
-		Args:  cobra.ExactArgs(1),
+		Use:               "open <short-code>",
+		Short:             "Open a short link in your browser",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeAlias,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, err := newDeps()
 			if err != nil {
@@ -31,9 +32,10 @@ func newOpenCmd() *cobra.Command {
 
 func newInspectCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "inspect <short-code>",
-		Short: "See where a short link points without counting a click",
-		Args:  cobra.ExactArgs(1),
+		Use:               "inspect <short-code>",
+		Short:             "See where a short link points without counting a click",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeAlias,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, err := newDeps()
 			if err != nil {

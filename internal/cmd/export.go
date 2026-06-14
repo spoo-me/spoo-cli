@@ -24,7 +24,8 @@ workbook with one sheet per dimension.`,
 		Example: `  spoo export --format xlsx
   spoo export launch --format csv -o launch-stats.zip
   spoo export launch --format json -o -   # write to stdout`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeAlias,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			switch format {
 			case "json", "csv", "xlsx", "xml":
@@ -70,5 +71,6 @@ workbook with one sheet per dimension.`,
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output file (default: server-suggested name; - for stdout)")
 	cmd.Flags().StringVar(&from, "from", "", "start date (ISO 8601)")
 	cmd.Flags().StringVar(&to, "to", "", "end date (ISO 8601)")
+	fixed(cmd, "format", "json", "csv", "xlsx", "xml")
 	return cmd
 }

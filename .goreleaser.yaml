@@ -51,6 +51,10 @@ homebrew_casks:
       email: admin@spoo.me
     homepage: https://spoo.me
     description: The official command-line client for spoo.me
+    # runs `spoo completion <shell>` during release and bundles the
+    # scripts into the cask, so `brew install spoo-me/tap/spoo` wires up
+    # bash/zsh/fish completion with no manual steps (GoReleaser ≥ v2.15)
+    generate_completions_from_executable: true
 
 # Publishes the manifest to spoo-me/scoop-bucket (same TAP_GITHUB_TOKEN).
 scoops:

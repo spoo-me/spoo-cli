@@ -68,6 +68,7 @@ argument on a terminal, opens an interactive form.`,
 	cmd.Flags().BoolVar(&req.PrivateStats, "private-stats", false, "make stats private (requires login)")
 	cmd.Flags().StringVar(&req.Domain, "domain", "", "use one of your custom domains")
 	cmd.Flags().BoolVar(&showQR, "qr", false, "also print a scannable QR code for the new link")
+	flagComp(cmd, "domain", completeDomain)
 	return cmd
 }
 

@@ -115,15 +115,17 @@ creation authenticated by another API key. The token is shown ONCE.`,
 	cmd.Flags().StringVar(&description, "description", "", "what this key is for")
 	cmd.Flags().StringSliceVar(&scopes, "scopes", nil, "comma-separated scopes (required)")
 	cmd.Flags().StringVar(&expires, "expires", "", "expiry: ISO 8601, epoch, or duration like 720h")
+	flagComp(cmd, "scopes", completeScopes)
 	return cmd
 }
 
 func newKeysRevokeCmd() *cobra.Command {
 	var hard bool
 	cmd := &cobra.Command{
-		Use:   "revoke <id>",
-		Short: "Revoke an API key",
-		Args:  cobra.ExactArgs(1),
+		Use:               "revoke <id>",
+		Short:             "Revoke an API key",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeKeyID,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, err := newDeps()
 			if err != nil {

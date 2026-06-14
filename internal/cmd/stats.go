@@ -36,7 +36,8 @@ With a short code, shows that link — public stats work without login.`,
   spoo stats --plain     # static report
   spoo stats launch --from 2026-01-01 --to 2026-02-01
   spoo stats launch --json`,
-		Args: cobra.MaximumNArgs(1),
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: completeAlias,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, err := newDeps()
 			if err != nil {

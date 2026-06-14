@@ -22,7 +22,8 @@ pass --invert on light ones if your scanner struggles.`,
 		Example: `  spoo qr launch
   spoo qr https://spoo.me/launch
   spoo qr launch --invert`,
-		Args: cobra.ExactArgs(1),
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeAlias,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := args[0]
 			if !strings.Contains(target, "://") {

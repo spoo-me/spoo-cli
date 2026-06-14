@@ -60,6 +60,9 @@ toggle, delete). Piped or with --json it prints the list and exits.`,
 	cmd.Flags().IntVar(&opts.Page, "page", 1, "page number")
 	cmd.Flags().IntVar(&opts.PageSize, "page-size", 20, "items per page (max 100)")
 	cmd.Flags().StringVar(&opts.SortBy, "sort", "total_clicks", "sort by: total_clicks, created_at, last_click")
+	fixed(cmd, "status", "active", "inactive", "blocked", "expired")
+	fixed(cmd, "sort", "total_clicks", "created_at", "last_click")
+	flagComp(cmd, "domain", completeDomain)
 	cmd.AddCommand(newLinksDeleteCmd(), newLinksUpdateCmd())
 	return cmd
 }
@@ -91,9 +94,10 @@ func printLinksList(cmd *cobra.Command, d *deps, opts api.ListURLsOptions, asJSO
 func newLinksDeleteCmd() *cobra.Command {
 	var yes bool
 	cmd := &cobra.Command{
-		Use:   "delete <id>",
-		Short: "Permanently delete a link",
-		Args:  cobra.ExactArgs(1),
+		Use:               "delete <id>",
+		Short:             "Permanently delete a link",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeLinkID,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			d, err := newDeps()
 			if err != nil {
@@ -119,9 +123,10 @@ func newLinksUpdateCmd() *cobra.Command {
 		maxClicks                                 int
 	)
 	cmd := &cobra.Command{
-		Use:   "update <id>",
-		Short: "Update a link's properties",
-		Args:  cobra.ExactArgs(1),
+		Use:               "update <id>",
+		Short:             "Update a link's properties",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeLinkID,
 		Example: `  spoo links update 64f0c2... --status inactive
   spoo links update 64f0c2... --long-url https://new-destination.com
   spoo links update 64f0c2... --max-clicks 0   # remove the click limit`,
@@ -176,5 +181,6 @@ func newLinksUpdateCmd() *cobra.Command {
 	cmd.Flags().IntVar(&maxClicks, "max-clicks", 0, "click limit (0 removes it)")
 	cmd.Flags().StringVar(&expires, "expires", "", "expiry: ISO 8601, epoch, or duration like 72h")
 	cmd.Flags().StringVar(&status, "status", "", "active or inactive")
+	fixed(cmd, "status", "active", "inactive")
 	return cmd
 }
