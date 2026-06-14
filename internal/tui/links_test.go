@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -450,17 +451,17 @@ func TestEditFormChanges(t *testing.T) {
 	}
 
 	// edit destination, alias, max-clicks, status; leave password blank
-	e.vals.longURL = "https://new.com"
-	e.vals.alias = "promo"
-	e.vals.maxClicks = "0"
-	e.vals.status = "inactive"
+	e.inputs[fDest].SetValue("https://new.com")
+	e.inputs[fAlias].SetValue("promo")
+	e.inputs[fMaxClicks].SetValue("0")
+	e.status = "inactive"
 	ch, err := e.changes()
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]any{
 		"long_url": "https://new.com", "alias": "promo",
-		"max_clicks": 0, "status": "inactive",
+		"max_clicks": 0, "status": "INACTIVE", // API enum is upper-case
 	}
 	if len(ch) != len(want) {
 		t.Fatalf("changes = %v, want %v", ch, want)
@@ -482,7 +483,63 @@ func TestEditKeyOpensPrefilledForm(t *testing.T) {
 	if !m.edit.open || cmd == nil {
 		t.Fatal("e should open the edit form")
 	}
-	if m.edit.vals.longURL != "https://a.com" || m.edit.vals.alias != "first" {
-		t.Fatalf("form not pre-filled: %+v", m.edit.vals)
+	if m.edit.inputs[fDest].Value() != "https://a.com" || m.edit.inputs[fAlias].Value() != "first" {
+		t.Fatalf("form not pre-filled: dest=%q alias=%q", m.edit.inputs[fDest].Value(), m.edit.inputs[fAlias].Value())
+	}
+}
+
+// the edit dialog: esc cancels, the status toggle flips, enter saves
+// the upper-cased status, and the form is boxed.
+func TestEditFormInteraction(t *testing.T) {
+	var patchedStatus string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPatch {
+			b, _ := io.ReadAll(r.Body)
+			patchedStatus = string(b)
+		}
+		w.Write([]byte(`{"message":"ok","id":"id-first"}`))
+	}))
+	defer srv.Close()
+
+	// esc cancels without saving
+	m := newLinksModelWithPage(t, srv.URL)
+	m.width, m.height = 120, 40
+	m.relayout()
+	m, _ = pressKey(t, m, 'e')
+	if v := m.View().Content; !strings.Contains(v, "edit first") || !strings.Contains(v, "╮") {
+		t.Fatal("edit form should be titled and boxed")
+	}
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = next.(LinksModel)
+	if m.edit.open || m.confirm.open {
+		t.Fatal("esc should close the edit form with no save dialog")
+	}
+
+	// reopen, jump to the status field, flip it, save → confirm → PATCH
+	m, _ = pressKey(t, m, 'e')
+	for i := 0; i < statusField; i++ {
+		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+		m = next.(LinksModel)
+	}
+	if m.edit.focus != statusField {
+		t.Fatalf("focus = %d, want the status field", m.edit.focus)
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeySpace}) // toggle active→inactive
+	m = next.(LinksModel)
+	if m.edit.status != "inactive" {
+		t.Fatalf("status toggle = %q, want inactive", m.edit.status)
+	}
+	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // save
+	m = next.(LinksModel)
+	if !m.confirm.open || m.confirm.tag != "save" {
+		t.Fatalf("enter should stage a save confirmation: %+v", m.confirm)
+	}
+	m, cmd := pressEnter(t, m) // confirm
+	if cmd == nil {
+		t.Fatal("confirm produced no PATCH")
+	}
+	cmd()
+	if !strings.Contains(patchedStatus, `"INACTIVE"`) {
+		t.Fatalf("PATCH body = %q, want upper-case INACTIVE", patchedStatus)
 	}
 }

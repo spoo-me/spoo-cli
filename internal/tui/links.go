@@ -611,7 +611,7 @@ func (m LinksModel) View() tea.View {
 	w, h := max(60, m.width), max(20, m.height)
 	switch {
 	case m.edit.open:
-		content = overlayCenter(content, m.edit.view(), w, h)
+		content = overlayCenter(content, m.edit.view(w), w, h)
 	case m.confirm.open:
 		content = overlayCenter(content, m.confirm.view(), w, h)
 	case m.qrURL != "":
