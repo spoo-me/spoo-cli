@@ -77,9 +77,15 @@ spoo stats launch                                 # charts in your terminal
 
 # 🔑 Authentication
 
-`spoo auth login` uses spoo.me's connected-apps device flow: your browser opens, you approve once, and the CLI receives scoped tokens — it never sees your password. Sessions refresh themselves for 30 days. Manage or revoke access any time at <https://spoo.me/dashboard/apps>.
+Sign in with the connected-apps device flow — your browser opens, you approve once, and the CLI receives scoped tokens. It never sees your password, and sessions refresh themselves for 30 days:
 
-Headless? Pipe in an API key from <https://spoo.me/dashboard/keys>:
+```bash
+spoo auth login
+```
+
+Manage or revoke access any time at <https://spoo.me/dashboard/apps>.
+
+Headless or CI? Skip the browser and pipe in an API key from <https://spoo.me/dashboard/keys>:
 
 ```bash
 echo $SPOO_TOKEN | spoo auth login --with-token
@@ -98,4 +104,15 @@ Releases are cut by pushing a `v*` tag; [GoReleaser](https://goreleaser.com) bui
 
 Issues and pull requests are welcome. Found a bug or have an idea? [Open an issue](https://github.com/spoo-me/spoo-cli/issues) or join the conversation on [Discord](https://spoo.me/discord).
 
-<p align="center">Part of the <a href="https://spoo.me">spoo.me</a> family · <a href="https://github.com/spoo-me/spoo-raycast">Raycast</a> · <a href="https://github.com/spoo-me/py_spoo_url">Python SDK</a> · <a href="https://github.com/spoo-me/spoo-rust">Rust</a></p>
+---
+
+<h6 align="center">
+<img src="https://spoo.me/static/images/favicon.png" height=30 title="Spoo.me Copyright">
+<br>
+© spoo.me . 2026
+
+All Rights Reserved</h6>
+
+<p align="center">
+ <a href="https://github.com/spoo-me/spoo-cli/blob/main/LICENSE"><img src="https://img.shields.io/static/v1.svg?style=for-the-badge&label=License&message=APACHE-2.0&logoColor=d9e0ee&colorA=363a4f&colorB=b7bdf8"/></a>
+</p>
