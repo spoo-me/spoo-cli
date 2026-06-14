@@ -57,6 +57,24 @@ Grab a binary for macOS, Linux, or Windows — or a `.deb`, `.rpm`, or `.apk` pa
 > [!TIP]
 > Point the CLI at a self-hosted instance any time with `export SPOO_API_URL=http://localhost:8000`.
 
+# ⌨️ Shell Completion
+
+Tab-completion covers commands, flags, **and live data** — your link aliases (`spoo open <Tab>`), link and key IDs (`spoo links delete <Tab>`, `spoo keys revoke <Tab>`), and flag values like `--scopes`, `--domain`, and `--format`.
+
+Installed via **Homebrew**? It's wired up automatically — just open a new shell.
+
+Installed another way (`go install`, a raw binary, Scoop, or a Linux package)? Load it for your shell:
+
+```bash
+source <(spoo completion zsh)         # zsh   — add to ~/.zshrc
+source <(spoo completion bash)        # bash  — add to ~/.bashrc
+spoo completion fish | source         # fish
+spoo completion powershell | Out-String | Invoke-Expression   # PowerShell — add to $PROFILE
+```
+
+> [!NOTE]
+> Run `spoo completion <shell> --help` for instructions on installing the script permanently.
+
 # 🚀 Quick Start
 
 ```bash
