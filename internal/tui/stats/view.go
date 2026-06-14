@@ -3,7 +3,6 @@ package stats
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
@@ -40,8 +39,12 @@ func (m Model) View() tea.View {
 		} else {
 			chartBody = m.chartLegend() + "\n" + m.timeChart(chartBoxW-4, chartH)
 		}
+		overview := overviewCard{
+			res: m.res, prev: m.prev, metric: m.metric,
+			span: m.win.span, labelW: min(20, max(13, m.overviewWidth()-20)),
+		}
 		top := lipgloss.JoinHorizontal(lipgloss.Top,
-			m.boxed("overview", m.overviewBody(), overviewW, chartH+4, false, ui.Accent),
+			m.boxed("overview", overview.render(), overviewW, chartH+4, false, ui.Accent),
 			" ",
 			m.boxed(title, chartBody, chartBoxW, chartH+4, chartFocused, m.metricHue()),
 		)
@@ -128,103 +131,6 @@ func (m Model) filterLine() string {
 		chips[i] = ui.Title.Render(f.dim) + ui.Dim.Render("=") + f.value
 	}
 	return ui.Dim.Render("  filtered: ") + strings.Join(chips, ui.Dim.Render(" · "))
-}
-
-func (m Model) overviewBody() string {
-	s := m.res.Summary
-	labelW := min(20, max(13, m.overviewWidth()-20))
-	row := func(label, value string, style lipgloss.Style) string {
-		return ui.Dim.Render(kit.PadToWidth(label, labelW)) + style.Render(value)
-	}
-	plain := lipgloss.NewStyle()
-
-	clicksRow := row("clicks", fmt.Sprintf("%d", s.TotalClicks), ui.OK)
-	if delta := m.deltaBadge(); delta != "" {
-		clicksRow += "  " + delta
-	}
-	rows := []string{
-		clicksRow,
-		row("unique", fmt.Sprintf("%d", s.UniqueClicks), plain),
-		row("avg redirect", fmt.Sprintf("%.0fms", s.AvgRedirectionTime), plain),
-	}
-	if rate, ok := m.res.ComputedMetrics["unique_click_rate"]; ok {
-		rows = append(rows, row("unique rate", fmt.Sprintf("%.0f%%", rate), plain))
-	}
-	if rate, ok := m.res.ComputedMetrics["repeat_click_rate"]; ok {
-		rows = append(rows, row("repeat rate", fmt.Sprintf("%.0f%%", rate), plain))
-	}
-	if cpv, ok := m.res.ComputedMetrics["average_clicks_per_visitor"]; ok {
-		rows = append(rows, row("per visitor", fmt.Sprintf("%.1f", cpv), plain))
-	}
-	if best, ok := m.bestDay(); ok {
-		rows = append(rows, row("best day", best, plain))
-	}
-	if active, ok := m.activeDays(); ok {
-		rows = append(rows, row("active days", active, plain))
-	}
-	if s.FirstClick != "" {
-		rows = append(rows,
-			row("first click", kit.ISODate(s.FirstClick), plain),
-			row("last click", kit.ISODate(s.LastClick), plain))
-	}
-	return strings.Join(rows, "\n")
-}
-
-// deltaBadge compares this window's clicks to the previous window.
-func (m Model) deltaBadge() string {
-	if m.prev == nil {
-		return ""
-	}
-	cur := float64(m.res.Summary.TotalClicks)
-	old := float64(m.prev.Summary.TotalClicks)
-	switch {
-	case old == 0 && cur == 0:
-		return ""
-	case old == 0:
-		return ui.OK.Render("new")
-	}
-	pct := (cur - old) / old * 100
-	badge := fmt.Sprintf("▲ %+.0f%%", pct)
-	style := ui.OK
-	if pct < 0 {
-		badge = fmt.Sprintf("▼ %.0f%%", pct)
-		style = ui.Err
-	}
-	return style.Render(badge)
-}
-
-func (m Model) bestDay() (string, bool) {
-	var best api.MetricPoint
-	for _, p := range m.res.Points("time", m.metric) {
-		if p.Value > best.Value {
-			best = p
-		}
-	}
-	if best.Value == 0 {
-		return "", false
-	}
-	day := best.Label
-	if ts, ok := kit.ParseBucketTime(best.Label); ok {
-		day = ts.Format("Jan 02")
-	}
-	return fmt.Sprintf("%s · %.0f", day, best.Value), true
-}
-
-func (m Model) activeDays() (string, bool) {
-	days := map[string]bool{}
-	for _, p := range m.res.Points("time", m.metric) {
-		if p.Value <= 0 {
-			continue
-		}
-		if ts, ok := kit.ParseBucketTime(p.Label); ok {
-			days[ts.Format("2006-01-02")] = true
-		}
-	}
-	if len(days) == 0 {
-		return "", false
-	}
-	spanDays := max(1, int(m.win.span/(24*time.Hour)))
-	return fmt.Sprintf("%d of %d", len(days), spanDays), true
 }
 
 func (m Model) chartTitle() string {
