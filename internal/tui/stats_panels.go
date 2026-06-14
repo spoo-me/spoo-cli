@@ -14,24 +14,16 @@ import (
 // (terminal cells are ~2:1), and the division remainder widens the
 // leading panels so each row spans the full terminal width.
 func (m StatsModel) panelGrid() string {
-	cols := m.gridCols()
-	usable := m.width - (cols - 1)
-	panelW := usable / cols
-	rem := usable - panelW*cols
-	contentRows := m.uniformRows()
+	lay := m.panelLayout()
 
 	var rows []string
 	for _, chunk := range m.panelChunks() {
-		row := make([]string, 0, cols*2)
+		row := make([]string, 0, lay.cols*2)
 		for n, i := range chunk {
 			if len(row) > 0 {
 				row = append(row, " ")
 			}
-			w := panelW
-			if n < rem {
-				w++
-			}
-			row = append(row, m.panelView(i, w, contentRows, panelTopN))
+			row = append(row, m.panelView(i, lay.panelWidth(n), lay.contentRows, panelTopN))
 		}
 		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, row...))
 	}

@@ -38,19 +38,13 @@ func (m StatsModel) hitRegions() []hitRegion {
 		{x: overviewW + 1, y: y0, w: m.width - overviewW - 1, h: topH, item: 0},
 	}
 
-	cols := m.gridCols()
-	usable := m.width - (cols - 1)
-	panelW := usable / cols
-	rem := usable - panelW*cols
-	panelH := m.uniformRows() + 3
+	lay := m.panelLayout()
+	panelH := lay.contentRows + 3
 	gridY := y0 + topH
 	for r, chunk := range m.panelChunks() {
 		x := 0
 		for n, i := range chunk {
-			w := panelW
-			if n < rem {
-				w++
-			}
+			w := lay.panelWidth(n)
 			regions = append(regions, hitRegion{x: x, y: gridY + r*panelH, w: w, h: panelH, item: i + 1})
 			x += w + 1
 		}

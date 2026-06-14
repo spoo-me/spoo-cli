@@ -52,6 +52,39 @@ func (m StatsModel) panelChunks() [][]int {
 	return chunks
 }
 
+// panelLayout is the breakdown grid's geometry, computed once so the
+// renderer (panelGrid) and mouse hit-testing (hitRegions) draw from a
+// single source and can never drift: same columns, same per-panel
+// widths, same content height.
+type panelLayout struct {
+	cols        int
+	panelW      int // base panel width; the first `rem` panels per row get +1
+	rem         int
+	contentRows int // shared inner row count of every panel
+}
+
+// panelWidth is the width of the n-th panel in a row; the leading `rem`
+// panels absorb the division remainder so each row spans the full width.
+func (l panelLayout) panelWidth(n int) int {
+	if n < l.rem {
+		return l.panelW + 1
+	}
+	return l.panelW
+}
+
+// panelLayout resolves the grid geometry for the current terminal width.
+func (m StatsModel) panelLayout() panelLayout {
+	cols := m.gridCols()
+	usable := m.width - (cols - 1)
+	panelW := usable / cols
+	return panelLayout{
+		cols:        cols,
+		panelW:      panelW,
+		rem:         usable - panelW*cols,
+		contentRows: m.uniformRows(),
+	}
+}
+
 // chartHeight gives the time chart the height the grid doesn't need.
 func (m StatsModel) chartHeight() int {
 	used := 2 /*header+footer*/ + 2 /*chart box borders*/ + 2 /*title+legend*/
