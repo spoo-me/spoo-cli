@@ -4,8 +4,8 @@
         -%@@@@@@@@@#.
        #@@@@@@@@@@@@@.
      .%@@@@@@@@@@@@@@+
-    :@@@@@@@@@@@@@@@@+
-  .+@@@@@@@@@@@@@@@@@.
+    :@@@@@@@@@@@@@@@@+     <b>spoo</b>
+  .+@@@@@@@@@@@@@@@@@.     the spoo.me CLI
 .*@@@@@@@@@@@@@@@@@@+
 +@@@@@@@@@@@@@@@@@@#
     =@@@@@@@@@@@@@%.
@@ -14,7 +14,6 @@
 </pre>
 </div>
 
-<h3 align="center">spoo.me for the Terminal</h3>
 <p align="center">Shorten, browse, and analyze your spoo.me links without leaving the terminal 🚀</p>
 
 <p align="center">
@@ -27,7 +26,7 @@
 
 <p align="center">
 <a href="https://spoo.me"><img src="https://img.shields.io/badge/spoo.me-6a5cf4?logo=https://spoo.me/static/images/favicon.png" alt="spoo.me"></a>
-<img src="https://img.shields.io/github/go-mod/go-version/spoo-me/spoo-cli?logo=go&label=Go&color=6a5cf4" alt="Go version">
+<img src="https://img.shields.io/badge/Go-1.26-6a5cf4?logo=go&logoColor=white" alt="Go">
 <a href="https://spoo.me/discord"><img src="https://img.shields.io/discord/1192388005206433892?logo=discord" alt="Discord"></a>
 <a href="https://github.com/spoo-me/spoo-cli/blob/main/LICENSE"><img src="https://img.shields.io/static/v1.svg?style=flat&label=License&message=Apache%202.0&colorA=363a4f&colorB=b7bdf8" alt="License"></a>
 </p>
