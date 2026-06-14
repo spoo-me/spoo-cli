@@ -46,6 +46,9 @@ homebrew_casks:
       owner: spoo-me
       name: homebrew-tap
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: zingzy
+      email: admin@spoo.me
     homepage: https://spoo.me
     description: The official command-line client for spoo.me
 
@@ -55,6 +58,9 @@ scoops:
       owner: spoo-me
       name: scoop-bucket
       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: zingzy
+      email: admin@spoo.me
     homepage: https://spoo.me
     description: The official command-line client for spoo.me
     license: Apache-2.0
