@@ -1,4 +1,4 @@
-package tui
+package stats
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ import (
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
-func (m StatsModel) View() tea.View {
+func (m Model) View() tea.View {
 	var b strings.Builder
 	b.WriteString(m.headerLine() + "\n")
 	if line := m.filterLine(); line != "" {
@@ -86,7 +86,7 @@ func (m StatsModel) View() tea.View {
 	return v
 }
 
-func (m StatsModel) headerLine() string {
+func (m Model) headerLine() string {
 	target := "all links"
 	if m.target != "" {
 		target = m.target
@@ -119,7 +119,7 @@ func plural(n int) string {
 	return "s"
 }
 
-func (m StatsModel) filterLine() string {
+func (m Model) filterLine() string {
 	if len(m.filters) == 0 {
 		return ""
 	}
@@ -130,7 +130,7 @@ func (m StatsModel) filterLine() string {
 	return ui.Dim.Render("  filtered: ") + strings.Join(chips, ui.Dim.Render(" · "))
 }
 
-func (m StatsModel) overviewBody() string {
+func (m Model) overviewBody() string {
 	s := m.res.Summary
 	labelW := min(20, max(13, m.overviewWidth()-20))
 	row := func(label, value string, style lipgloss.Style) string {
@@ -171,7 +171,7 @@ func (m StatsModel) overviewBody() string {
 }
 
 // deltaBadge compares this window's clicks to the previous window.
-func (m StatsModel) deltaBadge() string {
+func (m Model) deltaBadge() string {
 	if m.prev == nil {
 		return ""
 	}
@@ -193,7 +193,7 @@ func (m StatsModel) deltaBadge() string {
 	return style.Render(badge)
 }
 
-func (m StatsModel) bestDay() (string, bool) {
+func (m Model) bestDay() (string, bool) {
 	var best api.MetricPoint
 	for _, p := range m.res.Points("time", m.metric) {
 		if p.Value > best.Value {
@@ -210,7 +210,7 @@ func (m StatsModel) bestDay() (string, bool) {
 	return fmt.Sprintf("%s · %.0f", day, best.Value), true
 }
 
-func (m StatsModel) activeDays() (string, bool) {
+func (m Model) activeDays() (string, bool) {
 	days := map[string]bool{}
 	for _, p := range m.res.Points("time", m.metric) {
 		if p.Value <= 0 {
@@ -227,13 +227,13 @@ func (m StatsModel) activeDays() (string, bool) {
 	return fmt.Sprintf("%d of %d", len(days), spanDays), true
 }
 
-func (m StatsModel) chartTitle() string {
+func (m Model) chartTitle() string {
 	return "traffic over time · " + m.win.label
 }
 
 // chartLegend names the time chart's series, including the previous-
 // period ghost while it's shown.
-func (m StatsModel) chartLegend() string {
+func (m Model) chartLegend() string {
 	legend := chartClicks.Render("─── clicks") + "  " + chartUnique.Render("─── unique")
 	if m.showPrev {
 		legend += "  " + ui.Dim.Render("─── previous "+m.win.label)
@@ -242,7 +242,7 @@ func (m StatsModel) chartLegend() string {
 }
 
 // timeChart renders clicks and unique clicks as braille lines.
-func (m StatsModel) timeChart(width, height int) string {
+func (m Model) timeChart(width, height int) string {
 	clicks := m.res.Points("time", "clicks")
 	uniques := m.res.Points("time", "unique_clicks")
 	if len(clicks) == 0 {
@@ -315,7 +315,7 @@ func (m StatsModel) timeChart(width, height int) string {
 
 // focusView fills the screen with one chart and lists the rest in a
 // sidebar; j/k walks the sidebar and the main area follows.
-func (m StatsModel) focusView() string {
+func (m Model) focusView() string {
 	mainW := m.width - sidebarW - 1
 	mainH := m.height - 4
 	if m.status != "" {
@@ -345,7 +345,7 @@ func (m StatsModel) focusView() string {
 // sidebar lists all focusable charts, each with a mini preview: a
 // sparkline for the time chart, the top rows as tiny bars for panels.
 // Previews shrink away on short terminals.
-func (m StatsModel) sidebar(height int) string {
+func (m Model) sidebar(height int) string {
 	panels := m.panels()
 	nItems := len(panels) + 1
 	innerW := sidebarW - 4
@@ -387,7 +387,7 @@ func (m StatsModel) sidebar(height int) string {
 }
 
 // sidebarPreview renders up to n compact lines for a sidebar item.
-func (m StatsModel) sidebarPreview(item, width, n int) []string {
+func (m Model) sidebarPreview(item, width, n int) []string {
 	if item == 0 { // time chart → one-line sparkline
 		spark := kit.MiniSpark(m.res.Points("time", m.metric), width)
 		return []string{"  " + ui.OK.Render(spark)}[:min(1, n)]

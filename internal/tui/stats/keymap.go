@@ -1,4 +1,4 @@
-package tui
+package stats
 
 import (
 	"charm.land/bubbles/v2/key"

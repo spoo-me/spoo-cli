@@ -1,4 +1,4 @@
-package tui
+package stats
 
 import (
 	"context"
@@ -24,7 +24,7 @@ type linksListMsg struct {
 }
 
 // openSwitcher pops the picker, fetching the link list on first use.
-func (m StatsModel) openSwitcher() (tea.Model, tea.Cmd) {
+func (m Model) openSwitcher() (tea.Model, tea.Cmd) {
 	if m.scope == "anon" {
 		m.status = ui.Dim.Render("log in to switch links")
 		return m, nil
@@ -49,7 +49,7 @@ func (m StatsModel) openSwitcher() (tea.Model, tea.Cmd) {
 }
 
 // switchCandidates filters the cached list by the typed query.
-func (m StatsModel) switchCandidates() []api.URLItem {
+func (m Model) switchCandidates() []api.URLItem {
 	q := strings.ToLower(strings.TrimSpace(m.switchBox.Value()))
 	if q == "" {
 		return m.switchAll
@@ -65,7 +65,7 @@ func (m StatsModel) switchCandidates() []api.URLItem {
 }
 
 // updateSwitcher handles keys while the picker is up.
-func (m StatsModel) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -109,7 +109,7 @@ func (m StatsModel) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // switcherView is the picker box; the host overlays it via overlayCenter.
-func (m StatsModel) switcherView() string {
+func (m Model) switcherView() string {
 	row := func(label, note string, selected bool) string {
 		marker, style := "  ", lipgloss.NewStyle()
 		if selected {

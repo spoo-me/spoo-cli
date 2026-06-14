@@ -1,4 +1,4 @@
-package tui
+package stats
 
 import (
 	"fmt"

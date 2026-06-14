@@ -1,4 +1,4 @@
-package tui
+package stats
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 
 // window resolves the current view to concrete bounds: the configured
 // window, paged back offset times by its own span.
-func (m StatsModel) window() (start, end time.Time) {
+func (m Model) window() (start, end time.Time) {
 	end = time.Now().UTC()
 	if !m.win.anchored() {
 		end = m.win.end
@@ -26,7 +26,7 @@ func (m StatsModel) window() (start, end time.Time) {
 }
 
 // query builds the stats request for the current dashboard state.
-func (m StatsModel) query() api.StatsQuery {
+func (m Model) query() api.StatsQuery {
 	start, end := m.window()
 	groupBy := []string{"time", "browser", "os", "country", "city", "referrer"}
 	if m.target == "" {
@@ -51,7 +51,7 @@ func (m StatsModel) query() api.StatsQuery {
 
 // fetch loads the current window and, for the overview deltas, the
 // window before it (summary only) — one command, one message.
-func (m StatsModel) fetch() tea.Cmd {
+func (m Model) fetch() tea.Cmd {
 	client := m.client
 	q := m.query()
 	prevQ := q
@@ -71,7 +71,7 @@ func (m StatsModel) fetch() tea.Cmd {
 }
 
 // openExport pops the export dialog with a dated default filename.
-func (m StatsModel) openExport() (tea.Model, tea.Cmd) {
+func (m Model) openExport() (tea.Model, tea.Cmd) {
 	subject := "stats-all"
 	if m.target != "" {
 		subject = "stats-" + m.target
@@ -83,7 +83,7 @@ func (m StatsModel) openExport() (tea.Model, tea.Cmd) {
 
 // export downloads the current view in the requested format and
 // writes it where the dialog pointed.
-func (m StatsModel) export(req exportRequest) tea.Cmd {
+func (m Model) export(req exportRequest) tea.Cmd {
 	client := m.client
 	q := m.query()
 	return func() tea.Msg {
@@ -101,7 +101,7 @@ func autoTick() tea.Cmd {
 
 // panelPoints returns a panel's rows for the active metric, capped to
 // n. Used by both rendering and drill-down so selection always matches.
-func (m StatsModel) panelPoints(idx, n int) []api.MetricPoint {
+func (m Model) panelPoints(idx, n int) []api.MetricPoint {
 	if m.res == nil {
 		return nil
 	}
@@ -118,7 +118,7 @@ func (m StatsModel) panelPoints(idx, n int) []api.MetricPoint {
 }
 
 // weekdayPoints folds the time series into a Mon→Sun distribution.
-func (m StatsModel) weekdayPoints() []api.MetricPoint {
+func (m Model) weekdayPoints() []api.MetricPoint {
 	var totals [7]float64
 	for _, p := range m.res.Points("time", m.metric) {
 		if ts, ok := kit.ParseBucketTime(p.Label); ok {
@@ -134,7 +134,7 @@ func (m StatsModel) weekdayPoints() []api.MetricPoint {
 	return out
 }
 
-func (m StatsModel) hasFilter(f filterEntry) bool {
+func (m Model) hasFilter(f filterEntry) bool {
 	for _, e := range m.filters {
 		if e == f {
 			return true
@@ -151,7 +151,7 @@ func otherMetricKey(current string) string {
 }
 
 // metricTotal is the denominator for percentage columns.
-func (m StatsModel) metricTotal() float64 {
+func (m Model) metricTotal() float64 {
 	if m.metric == "unique_clicks" {
 		return float64(m.res.Summary.UniqueClicks)
 	}
@@ -160,7 +160,7 @@ func (m StatsModel) metricTotal() float64 {
 
 // metricHue is the pastel identity of the active metric; the time
 // panel's focus shades follow it (clicks sky, unique pink).
-func (m StatsModel) metricHue() color.Color {
+func (m Model) metricHue() color.Color {
 	if m.metric == "unique_clicks" {
 		return ui.Pink
 	}

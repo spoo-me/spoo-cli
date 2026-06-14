@@ -1,4 +1,4 @@
-package tui
+package stats
 
 import (
 	"testing"
@@ -23,7 +23,7 @@ func TestPanelGridGeometryIsStable(t *testing.T) {
 	for _, tc := range cases {
 		m := newStatsModel(t, "")
 		next, _ := m.Update(tea.WindowSizeMsg{Width: tc.width, Height: 50})
-		m = next.(StatsModel)
+		m = next.(Model)
 
 		if got := m.gridCols(); got != tc.wantCols {
 			t.Fatalf("width %d: gridCols=%d, want %d", tc.width, got, tc.wantCols)

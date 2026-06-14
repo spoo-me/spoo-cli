@@ -1,4 +1,4 @@
-package tui
+package stats
 
 import (
 	tea "charm.land/bubbletea/v2"
@@ -23,7 +23,7 @@ func (r hitRegion) contains(x, y int) bool {
 
 // hitRegions maps the dashboard layout. Modals and focus mode have
 // their own (keyboard) interaction models, so they get no regions.
-func (m StatsModel) hitRegions() []hitRegion {
+func (m Model) hitRegions() []hitRegion {
 	if m.res == nil || m.focusMode || m.exportBox.open || m.switchMode || m.rangeMode {
 		return nil
 	}
@@ -54,7 +54,7 @@ func (m StatsModel) hitRegions() []hitRegion {
 
 // rowAt translates a click's y inside a panel region to a row index,
 // honoring the extra header line of table mode.
-func (m StatsModel) rowAt(reg hitRegion, y int) int {
+func (m Model) rowAt(reg hitRegion, y int) int {
 	offset := 2 // border + title
 	if m.tableOn[m.panels()[reg.item-1].key] {
 		offset = 3 // + the table's header band
@@ -64,7 +64,7 @@ func (m StatsModel) rowAt(reg hitRegion, y int) int {
 
 // handleClick focuses what was clicked; clicking the already-selected
 // row drills into it.
-func (m StatsModel) handleClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 	if msg.Button != tea.MouseLeft {
 		return m, nil
 	}
@@ -93,7 +93,7 @@ func (m StatsModel) handleClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 
 // handleWheel scrolls the row selection of the panel under the
 // pointer; over the time chart it pages the window.
-func (m StatsModel) handleWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleWheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	delta := 0
 	switch msg.Button {
 	case tea.MouseWheelDown:

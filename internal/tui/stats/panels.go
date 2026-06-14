@@ -1,4 +1,4 @@
-package tui
+package stats
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ import (
 // one-column gutter visually matches the stacked borders between rows
 // (terminal cells are ~2:1), and the division remainder widens the
 // leading panels so each row spans the full terminal width.
-func (m StatsModel) panelGrid() string {
+func (m Model) panelGrid() string {
 	lay := m.panelLayout()
 
 	var rows []string
@@ -31,7 +31,7 @@ func (m StatsModel) panelGrid() string {
 	return strings.Join(rows, "\n")
 }
 
-func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
+func (m Model) panelView(idx, width, contentRows, topN int) string {
 	p := m.panels()[idx]
 	focused := !m.focusMode && idx == m.focus-1
 	innerW := width - 4 // border-box width minus borders and padding
@@ -90,7 +90,7 @@ func (m StatsModel) panelView(idx, width, contentRows, topN int) string {
 }
 
 // rowLabel normalizes a point label for display.
-func (m StatsModel) rowLabel(panelKey, label string) string {
+func (m Model) rowLabel(panelKey, label string) string {
 	if panelKey == "country" {
 		return ui.CountryLabel(label)
 	}
@@ -115,7 +115,7 @@ const dashTableStyle = tsTreeBand
 
 // panelTableBody renders a panel's data as a styled table. withRank
 // adds a leaderboard # column and withTotals a Σ footer (focus mode).
-func (m StatsModel) panelTableBody(idx, innerW, height, topN int, focused, withRank, withTotals bool) string {
+func (m Model) panelTableBody(idx, innerW, height, topN int, focused, withRank, withTotals bool) string {
 	p := m.panels()[idx]
 	pts := m.panelPoints(idx, topN)
 	if len(pts) == 0 {
@@ -189,7 +189,7 @@ func styledTotals(widths []int, cells []string) string {
 
 // timeTableBody renders the time series as a table (focus mode),
 // most recent bucket first, with a Σ footer.
-func (m StatsModel) timeTableBody(innerW, height int) string {
+func (m Model) timeTableBody(innerW, height int) string {
 	clicks := m.res.Points("time", "clicks")
 	if len(clicks) == 0 {
 		return ui.Dim.Render("no time series data")
@@ -217,7 +217,7 @@ func (m StatsModel) timeTableBody(innerW, height int) string {
 }
 
 // focusPanelBody renders a panel's rows at full size for focus mode.
-func (m StatsModel) focusPanelBody(idx, width int) string {
+func (m Model) focusPanelBody(idx, width int) string {
 	p := m.panels()[idx]
 	innerW := width - 4
 	pts := m.panelPoints(idx, focusTopN)

@@ -1,4 +1,4 @@
-package tui
+package stats
 
 import (
 	"image/color"
@@ -69,10 +69,10 @@ type filterEntry struct {
 	value string
 }
 
-// StatsModel is the full-screen analytics dashboard: overview with
+// Model is the full-screen analytics dashboard: overview with
 // period deltas, a dual-series time chart, focusable breakdown panels
 // with server-side drill-down, window paging, and a focus mode.
-type StatsModel struct {
+type Model struct {
 	client *api.Client
 	target string // short code, or "" for account-wide
 	scope  string // all | anon
@@ -114,14 +114,14 @@ type StatsModel struct {
 	height int
 }
 
-func NewStats(client *api.Client, target, scope, tz string) StatsModel {
+func New(client *api.Client, target, scope, tz string) Model {
 	rangeBox := textinput.New()
 	rangeBox.Placeholder = "type a range…"
 	rangeBox.SetWidth(36) // fits "2026-01-01 to 2026-02-15" with room; keeps the cheat-sheet column still
 	switchBox := textinput.New()
 	switchBox.Placeholder = "alias or destination…"
 	switchBox.SetWidth(32)
-	return StatsModel{
+	return Model{
 		client:    client,
 		target:    target,
 		scope:     scope,
@@ -143,7 +143,7 @@ func NewStats(client *api.Client, target, scope, tz string) StatsModel {
 // panels returns the breakdown panels for the current view. Account-
 // wide gets the drillable top-links leaderboard first; a single link
 // gets the weekday distribution instead.
-func (m StatsModel) panels() []panelDef {
+func (m Model) panels() []panelDef {
 	if m.target == "" {
 		return []panelDef{
 			{"short_code", "top links"},
@@ -164,7 +164,7 @@ func (m StatsModel) panels() []panelDef {
 	}
 }
 
-func (m StatsModel) Init() tea.Cmd { return m.fetch() }
+func (m Model) Init() tea.Cmd { return m.fetch() }
 
 // FetchErr reports a fetch error so the command can surface it on exit.
-func (m StatsModel) FetchErr() error { return m.fetchErr }
+func (m Model) FetchErr() error { return m.fetchErr }

@@ -11,7 +11,7 @@ import (
 
 	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/auth"
-	"github.com/spoo-me/spoo-cli/internal/tui"
+	"github.com/spoo-me/spoo-cli/internal/tui/stats"
 )
 
 func newStatsCmd() *cobra.Command {
@@ -57,12 +57,12 @@ With a short code, shows that link — public stats work without login.`,
 
 			customRange := from != "" || to != ""
 			if !asJSON && !plain && !customRange && stdoutIsTerminal(cmd) {
-				model := tui.NewStats(d.client, target, scope, tz)
+				model := stats.New(d.client, target, scope, tz)
 				final, err := tea.NewProgram(model).Run()
 				if err != nil {
 					return err
 				}
-				if m, ok := final.(tui.StatsModel); ok && m.FetchErr() != nil {
+				if m, ok := final.(stats.Model); ok && m.FetchErr() != nil {
 					return m.FetchErr()
 				}
 				return nil

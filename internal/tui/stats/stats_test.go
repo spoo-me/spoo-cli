@@ -1,4 +1,4 @@
-package tui
+package stats
 
 import (
 	"net/http"
@@ -40,16 +40,16 @@ func testStatsResponse() *api.StatsResponse {
 	}
 }
 
-func newStatsModel(t *testing.T, srvURL string) StatsModel {
+func newStatsModel(t *testing.T, srvURL string) Model {
 	t.Helper()
 	keyring.MockInit()
 	client := api.New(srvURL, auth.NewStore(t.TempDir()))
-	m := NewStats(client, "", "all", "")
+	m := New(client, "", "all", "")
 	next, _ := m.Update(statsLoadedMsg{res: testStatsResponse()})
-	return next.(StatsModel)
+	return next.(Model)
 }
 
-func statsKey(t *testing.T, m StatsModel, key string) (StatsModel, tea.Cmd) {
+func statsKey(t *testing.T, m Model, key string) (Model, tea.Cmd) {
 	t.Helper()
 	var msg tea.KeyPressMsg
 	switch key {
@@ -63,7 +63,7 @@ func statsKey(t *testing.T, m StatsModel, key string) (StatsModel, tea.Cmd) {
 		msg = tea.KeyPressMsg{Code: rune(key[0]), Text: key}
 	}
 	next, cmd := m.Update(msg)
-	return next.(StatsModel), cmd
+	return next.(Model), cmd
 }
 
 func TestDashboardRendersAllSections(t *testing.T) {
@@ -353,7 +353,7 @@ func TestMouseClickAndWheel(t *testing.T) {
 	// click browsers row 1 (Safari): focuses the panel and selects the row
 	click := func(x, y int) {
 		next, _ := m.Update(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
-		m = next.(StatsModel)
+		m = next.(Model)
 	}
 	click(browsers.x+2, browsers.y+3)
 	if m.focus != 2 || m.sel[1] != 1 {
@@ -362,7 +362,7 @@ func TestMouseClickAndWheel(t *testing.T) {
 
 	// same spot again drills (Safari filter)
 	next, cmd := m.Update(tea.MouseClickMsg{X: browsers.x + 2, Y: browsers.y + 3, Button: tea.MouseLeft})
-	m = next.(StatsModel)
+	m = next.(Model)
 	if cmd == nil || len(m.filters) != 1 || m.filters[0].value != "Safari" {
 		t.Fatalf("second click should drill: filters=%v", m.filters)
 	}
@@ -370,7 +370,7 @@ func TestMouseClickAndWheel(t *testing.T) {
 
 	// wheel up over browsers moves the selection back up
 	next, _ = m.Update(tea.MouseWheelMsg{X: browsers.x + 2, Y: browsers.y + 2, Button: tea.MouseWheelUp})
-	m = next.(StatsModel)
+	m = next.(Model)
 	if m.sel[1] != 0 {
 		t.Fatalf("wheel: sel=%d, want 0", m.sel[1])
 	}
@@ -378,7 +378,7 @@ func TestMouseClickAndWheel(t *testing.T) {
 	// wheel down over the chart pages back in history
 	chart := regions[0]
 	next, cmd = m.Update(tea.MouseWheelMsg{X: chart.x + 2, Y: chart.y + 2, Button: tea.MouseWheelDown})
-	m = next.(StatsModel)
+	m = next.(Model)
 	if m.offset != 1 || cmd == nil {
 		t.Fatalf("chart wheel: offset=%d, want 1 with refetch", m.offset)
 	}
@@ -405,7 +405,7 @@ func TestLinkSwitcher(t *testing.T) {
 	// deliver the list (the Focus and list cmds are batched; run the batch)
 	for _, msg := range drainCmd(cmd) {
 		next, _ := m.Update(msg)
-		m = next.(StatsModel)
+		m = next.(Model)
 	}
 	if len(m.switchAll) != 2 {
 		t.Fatalf("switchAll = %d items, want 2", len(m.switchAll))

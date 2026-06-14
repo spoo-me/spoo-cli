@@ -1,4 +1,4 @@
-package tui
+package stats
 
 import (
 	"time"
@@ -8,7 +8,7 @@ import (
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
-func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -74,7 +74,7 @@ func (m StatsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateExport routes traffic to the export dialog and fires the
 // download once it confirms.
-func (m StatsModel) updateExport(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) updateExport(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var req *exportRequest
 	var cmd tea.Cmd
 	m.exportBox, req, cmd = m.exportBox.handle(msg)
@@ -86,7 +86,7 @@ func (m StatsModel) updateExport(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // updateRange handles keys while the range-expression strip is open.
-func (m StatsModel) updateRange(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateRange(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -118,7 +118,7 @@ func (m StatsModel) updateRange(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // updateFocusMode handles keys while a single chart fills the screen.
 // ←/→ moves focus between the main view and the sidebar; ↑/↓ moves
 // rows in the main view or switches charts in the sidebar.
-func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	items := len(m.panels()) + 1 // + the time chart
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -198,7 +198,7 @@ func (m StatsModel) updateFocusMode(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // openRange opens the range-expression strip in place of the hints.
-func (m StatsModel) openRange() (tea.Model, tea.Cmd) {
+func (m Model) openRange() (tea.Model, tea.Cmd) {
 	m.rangeMode = true
 	m.rangeErr = ""
 	m.rangeBox.SetValue("")
@@ -207,7 +207,7 @@ func (m StatsModel) openRange() (tea.Model, tea.Cmd) {
 
 // updateDashboard handles keys in the regular grid view. The focus
 // space matches focus mode: 0 is the time chart, 1.. the grid panels.
-func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	items := len(m.panels()) + 1
 	switch msg.String() {
 	case "ctrl+c", "q":
@@ -294,7 +294,7 @@ func (m StatsModel) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // drill adds a server-side filter for the selected row of panel idx.
-func (m StatsModel) drill(idx, topN int) (tea.Model, tea.Cmd) {
+func (m Model) drill(idx, topN int) (tea.Model, tea.Cmd) {
 	dim := m.panels()[idx].key
 	if dim == "weekday" {
 		m.status = ui.Dim.Render("weekdays are computed locally — nothing to drill into")
