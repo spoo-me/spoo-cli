@@ -39,24 +39,22 @@ checksum:
 changelog:
   use: github-native
 
-# Uncomment once the spoo-me/homebrew-tap repo exists and a
-# cross-repo token is configured as the TAP_GITHUB_TOKEN secret.
-# brews:
-#   - repository:
-#       owner: spoo-me
-#       name: homebrew-tap
-#       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-#     homepage: https://spoo.me
-#     description: The official command-line client for spoo.me
-#     license: Apache-2.0
-#     manpages: manpages/spoo.1.gz
+# Publishes the cask to spoo-me/homebrew-tap; needs the TAP_GITHUB_TOKEN
+# secret (a PAT with write access to that repo) in the release workflow.
+homebrew_casks:
+  - repository:
+      owner: spoo-me
+      name: homebrew-tap
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: https://spoo.me
+    description: The official command-line client for spoo.me
 
-# Uncomment once the spoo-me/scoop-bucket repo exists.
-# scoops:
-#   - repository:
-#       owner: spoo-me
-#       name: scoop-bucket
-#       token: "{{ .Env.TAP_GITHUB_TOKEN }}"
-#     homepage: https://spoo.me
-#     description: The official command-line client for spoo.me
-#     license: Apache-2.0
+# Publishes the manifest to spoo-me/scoop-bucket (same TAP_GITHUB_TOKEN).
+scoops:
+  - repository:
+      owner: spoo-me
+      name: scoop-bucket
+      token: "{{ .Env.TAP_GITHUB_TOKEN }}"
+    homepage: https://spoo.me
+    description: The official command-line client for spoo.me
+    license: Apache-2.0
