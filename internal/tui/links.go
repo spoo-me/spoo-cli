@@ -4,7 +4,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -71,23 +70,24 @@ type LinksModel struct {
 
 	opts api.ListURLsOptions // current query: search, sort, status, page size
 
-	tbl        table.Model
-	searchBox  textinput.Model
-	searching  bool
-	exportBox  exportModal
-	helper     help.Model // ? flips between short and full key help
-	qrURL      string     // non-empty: the QR dialog is up for this URL
-	showDetail bool       // detail pane open; it always reflects the selected row
-	stats      map[string]statsEntry
-	statsSeq   int // bumped on selection change; stale debounce ticks no-op
-	page       *api.URLPage
-	pageNo     int
-	status     string // transient status-bar message
-	pending    string // url id awaiting delete confirmation
-	loading    bool
-	err        error
-	width      int
-	height     int
+	tbl          table.Model
+	searchBox    textinput.Model
+	searching    bool
+	edit         editForm       // 'e' opens the pre-filled link editor
+	confirm      confirmDialog  // shared save/delete confirmation
+	pendingPATCH map[string]any // edit changes awaiting confirmation
+	helper       help.Model     // ? flips between short and full key help
+	qrURL        string         // non-empty: the QR dialog is up for this URL
+	showDetail   bool           // detail pane open; it always reflects the selected row
+	stats        map[string]statsEntry
+	statsSeq     int // bumped on selection change; stale debounce ticks no-op
+	page         *api.URLPage
+	pageNo       int
+	status       string // transient status-bar message
+	loading      bool
+	err          error
+	width        int
+	height       int
 }
 
 func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, openBrowser, copyText func(string) error) LinksModel {
@@ -112,7 +112,8 @@ func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, open
 		opts:        opts,
 		tbl:         tbl,
 		searchBox:   search,
-		exportBox:   newExportModal(),
+		edit:        newEditForm(),
+		confirm:     newConfirmDialog(),
 		helper:      newHelp(),
 		stats:       map[string]statsEntry{},
 		pageNo:      max(1, opts.Page),
@@ -236,19 +237,22 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyPressMsg:
+		if m.edit.open {
+			return m.updateEdit(msg)
+		}
+		if m.confirm.open {
+			return m.updateConfirm(msg)
+		}
 		if m.qrURL != "" {
 			return m.updateQR(msg)
-		}
-		if m.exportBox.open {
-			return m.updateExport(msg)
 		}
 		if m.searching {
 			return m.updateSearch(msg)
 		}
 		return m.updateBrowse(msg)
 	}
-	if m.exportBox.open { // directory reads, blink ticks
-		return m.updateExport(msg)
+	if m.edit.open { // form blink ticks, validation cmds
+		return m.updateEdit(msg)
 	}
 
 	var cmd tea.Cmd
@@ -256,34 +260,69 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// updateExport routes traffic to the export dialog and downloads the
-// account's analytics workbook once it confirms.
-func (m LinksModel) updateExport(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var req *exportRequest
+// updateEdit drives the embedded edit form; on submit it stages the
+// changed fields and pops a save confirmation.
+func (m LinksModel) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	m.exportBox, req, cmd = m.exportBox.handle(msg)
-	if req != nil {
-		m.status = ui.Dim.Render("exporting…")
-		return m, m.export(*req)
+	var done, aborted bool
+	m.edit, cmd, done, aborted = m.edit.update(msg)
+	if aborted {
+		return m, cmd
+	}
+	if done {
+		changes, err := m.edit.changes()
+		if err != nil {
+			m.status = ui.Err.Render("✗ " + err.Error())
+			return m, cmd
+		}
+		if len(changes) == 0 {
+			m.status = ui.Dim.Render("no changes")
+			return m, cmd
+		}
+		m.pendingPATCH = changes
+		it := m.edit.item
+		m.confirm = m.confirm.askSimple("save", it.ID, "Save changes to "+it.Alias+"?", m.edit.summary(changes))
 	}
 	return m, cmd
 }
 
-// export downloads account-wide analytics (the server's widest window)
-// in the requested format.
-func (m LinksModel) export(req exportRequest) tea.Cmd {
-	client := m.client
-	q := api.StatsQuery{
-		Scope:     "all",
-		StartDate: time.Now().UTC().AddDate(0, 0, -api.MaxRangeDays).Format(time.RFC3339),
-		GroupBy:   []string{"time", "browser", "os", "country", "city", "referrer", "short_code"},
+// updateConfirm resolves the shared confirmation dialog and runs the
+// tagged action when the user commits.
+func (m LinksModel) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	var confirmed bool
+	var cmd tea.Cmd
+	m.confirm, confirmed, cmd = m.confirm.handle(msg)
+	if !confirmed {
+		return m, cmd
 	}
+	switch m.confirm.tag {
+	case "save":
+		patch := m.pendingPATCH
+		m.pendingPATCH = nil
+		m.status = ui.Dim.Render("saving…")
+		return m, m.applyPATCH(m.confirm.tagID, patch)
+	case "delete":
+		m.status = ui.Dim.Render("deleting…")
+		return m, m.deleteURL(m.confirm.tagID)
+	}
+	return m, nil
+}
+
+// applyPATCH sends the staged edit and reports the outcome.
+func (m LinksModel) applyPATCH(id string, fields map[string]any) tea.Cmd {
+	client := m.client
 	return func() tea.Msg {
-		_, data, err := client.Export(context.Background(), q, req.format)
-		if err == nil {
-			err = os.WriteFile(req.path, data, 0o644)
-		}
-		return actionMsg{note: "exported " + collapseHome(req.path), err: err}
+		_, err := client.UpdateURL(context.Background(), id, fields)
+		return actionMsg{note: "link updated", err: err}
+	}
+}
+
+// deleteURL removes a link by id and reports the outcome.
+func (m LinksModel) deleteURL(id string) tea.Cmd {
+	client := m.client
+	return func() tea.Msg {
+		err := client.DeleteURL(context.Background(), id)
+		return actionMsg{note: "link deleted", err: err}
 	}
 }
 
@@ -345,14 +384,9 @@ func (m LinksModel) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // selection, so navigation stays live while it is open.
 func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
-	// any key other than a second 'd' cancels a pending delete
-	if m.pending != "" && key != "d" {
-		m.pending = ""
-		m.status = ""
-	}
 	// action keys return here and are never forwarded to the table —
 	// its default keymap also binds some of them (e.g. 'd' is half
-	// page down, which would move the cursor mid-confirmation)
+	// page down)
 	switch key {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -378,9 +412,12 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "e":
-		var cmd tea.Cmd
-		m.exportBox, cmd = m.exportBox.show(defaultExportName("links", time.Now().Format("2006-01-02")))
-		return m, cmd
+		if it := m.selected(); it != nil {
+			var cmd tea.Cmd
+			m.edit, cmd = m.edit.show(*it)
+			return m, cmd
+		}
+		return m, nil
 	case "Q", "shift+q":
 		if it := m.selected(); it != nil {
 			m.qrURL = m.shortURL(it)
@@ -428,7 +465,14 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case "d":
-		return m.armOrConfirmDelete(m.selected())
+		if it := m.selected(); it != nil {
+			m.confirm = m.confirm.askPhrase("delete", it.ID,
+				"Delete "+it.Alias+"?",
+				[]string{ui.Dim.Render("  → " + truncateToWidth(it.LongURL, 44)), "", ui.Dim.Render("  This can't be undone.")},
+				it.Alias)
+			return m, nil
+		}
+		return m, nil
 	}
 
 	prev := m.tbl.Cursor()
@@ -471,19 +515,6 @@ func (m LinksModel) fetchStats(alias string) tea.Cmd {
 	}
 }
 
-func (m LinksModel) armOrConfirmDelete(it *api.URLItem) (tea.Model, tea.Cmd) {
-	if it == nil {
-		return m, nil
-	}
-	if m.pending == it.ID {
-		m.pending = ""
-		return m, m.deleteURL(it)
-	}
-	m.pending = it.ID
-	m.status = ui.Err.Render("delete "+it.Alias+"?") + ui.Dim.Render(" press d again to confirm")
-	return m, nil
-}
-
 func (m LinksModel) openStatus(it *api.URLItem) string {
 	if err := m.openBrowser(m.shortURL(it)); err != nil {
 		return ui.Err.Render("✗ " + err.Error())
@@ -517,15 +548,6 @@ func (m LinksModel) toggleStatus(it *api.URLItem) tea.Cmd {
 		}
 		_, err := client.UpdateURL(context.Background(), id, map[string]any{"status": next})
 		return actionMsg{note: alias + " → " + next, err: err}
-	}
-}
-
-func (m LinksModel) deleteURL(it *api.URLItem) tea.Cmd {
-	client := m.client
-	id, alias := it.ID, it.Alias
-	return func() tea.Msg {
-		err := client.DeleteURL(context.Background(), id)
-		return actionMsg{note: "deleted " + alias, err: err}
 	}
 }
 
@@ -586,12 +608,14 @@ func (m LinksModel) View() tea.View {
 	}
 
 	content := b.String()
+	w, h := max(60, m.width), max(20, m.height)
 	switch {
-	case m.exportBox.open:
-		content = overlayCenter(content, m.exportBox.view(max(60, m.width)), max(60, m.width), max(20, m.height))
+	case m.edit.open:
+		content = overlayCenter(content, m.edit.view(), w, h)
+	case m.confirm.open:
+		content = overlayCenter(content, m.confirm.view(), w, h)
 	case m.qrURL != "":
-		h := max(m.height, lipgloss.Height(m.qrView())+2)
-		content = overlayCenter(content, m.qrView(), max(60, m.width), h)
+		content = overlayCenter(content, m.qrView(), w, max(h, lipgloss.Height(m.qrView())+2))
 	}
 	v := tea.NewView(content)
 	v.AltScreen = true

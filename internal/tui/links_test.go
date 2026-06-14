@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,10 +39,16 @@ func pressKey(t *testing.T, m LinksModel, key rune) (LinksModel, tea.Cmd) {
 	return next.(LinksModel), cmd
 }
 
+func pressEnter(t *testing.T, m LinksModel) (LinksModel, tea.Cmd) {
+	t.Helper()
+	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	return next.(LinksModel), cmd
+}
+
 // Regression: the table's default keymap binds 'd' to half-page-down.
 // If the keypress leaks into the table, the cursor moves between the
 // arming press and the confirming press, deleting the wrong row.
-func TestDeleteConfirmTargetsSameRow(t *testing.T) {
+func TestDeleteRequiresTypedAlias(t *testing.T) {
 	var deleted string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
@@ -52,21 +59,23 @@ func TestDeleteConfirmTargetsSameRow(t *testing.T) {
 	defer srv.Close()
 
 	m := newLinksModelWithPage(t, srv.URL)
-	if m.tbl.Cursor() != 0 {
-		t.Fatalf("initial cursor = %d, want 0", m.tbl.Cursor())
+	m, _ = pressKey(t, m, 'd') // open the delete dialog for "first"
+	if !m.confirm.open || m.confirm.tag != "delete" || m.confirm.tagID != "id-first" {
+		t.Fatalf("delete dialog not armed for the selected row: %+v", m.confirm)
 	}
 
-	m, _ = pressKey(t, m, 'd') // arm confirmation
-	if m.pending != "id-first" {
-		t.Fatalf("pending = %q, want id-first", m.pending)
-	}
-	if m.tbl.Cursor() != 0 {
-		t.Fatalf("cursor moved to %d after arming delete — key leaked into the table", m.tbl.Cursor())
+	// pressing enter before typing the alias must NOT delete
+	m, cmd := pressEnter(t, m)
+	if !m.confirm.open || cmd != nil {
+		t.Fatal("enter without the typed alias should not confirm")
 	}
 
-	m, cmd := pressKey(t, m, 'd') // confirm
-	if cmd == nil {
-		t.Fatal("confirming press returned no command")
+	for _, ch := range "first" {
+		m, _ = pressKey(t, m, ch)
+	}
+	m, cmd = pressEnter(t, m)
+	if m.confirm.open || cmd == nil {
+		t.Fatal("typing the alias then enter should confirm and delete")
 	}
 	if msg, ok := cmd().(actionMsg); !ok || msg.err != nil {
 		t.Fatalf("delete failed: %+v", msg)
@@ -76,15 +85,16 @@ func TestDeleteConfirmTargetsSameRow(t *testing.T) {
 	}
 }
 
-func TestOtherKeyCancelsPendingDelete(t *testing.T) {
+func TestDeleteDialogEscCancels(t *testing.T) {
 	m := newLinksModelWithPage(t, "http://unused.invalid")
 	m, _ = pressKey(t, m, 'd')
-	if m.pending == "" {
-		t.Fatal("expected pending delete after first d")
+	if !m.confirm.open {
+		t.Fatal("expected the delete dialog after d")
 	}
-	m, _ = pressKey(t, m, 'r') // any other action cancels
-	if m.pending != "" {
-		t.Fatalf("pending = %q, want cleared", m.pending)
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = next.(LinksModel)
+	if m.confirm.open {
+		t.Fatal("esc should close the delete dialog without deleting")
 	}
 }
 
@@ -229,7 +239,7 @@ func TestDetailFollowsSelection(t *testing.T) {
 	}
 }
 
-// d-d with the pane open deletes the selected item.
+// delete with the detail pane open targets the selected item.
 func TestDetailDeleteTargetsSelectedItem(t *testing.T) {
 	var deleted string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -241,11 +251,14 @@ func TestDetailDeleteTargetsSelectedItem(t *testing.T) {
 	defer srv.Close()
 
 	m := newLinksModelWithPage(t, srv.URL)
-	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // open detail pane
 	m = next.(LinksModel)
 
-	m, _ = pressKey(t, m, 'd') // arm
-	_, cmd := pressKey(t, m, 'd')
+	m, _ = pressKey(t, m, 'd')
+	for _, ch := range "first" {
+		m, _ = pressKey(t, m, ch)
+	}
+	_, cmd := pressEnter(t, m)
 	if cmd == nil {
 		t.Fatal("confirm produced no command")
 	}
@@ -419,5 +432,57 @@ func TestQRDialog(t *testing.T) {
 	m, _ = pressKey(t, m, 'x')
 	if m.qrURL != "" {
 		t.Fatal("any key should dismiss the QR dialog")
+	}
+}
+
+// The edit form diffs against the original and only PATCHes real changes.
+func TestEditFormChanges(t *testing.T) {
+	max := 100
+	it := api.URLItem{
+		ID: "id-x", Alias: "launch", LongURL: "https://old.com",
+		Status: "ACTIVE", MaxClicks: &max,
+	}
+	e, _ := newEditForm().show(it)
+
+	// no edits → no changes
+	if ch, _ := e.changes(); len(ch) != 0 {
+		t.Fatalf("unchanged form yields %v, want empty", ch)
+	}
+
+	// edit destination, alias, max-clicks, status; leave password blank
+	e.vals.longURL = "https://new.com"
+	e.vals.alias = "promo"
+	e.vals.maxClicks = "0"
+	e.vals.status = "inactive"
+	ch, err := e.changes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{
+		"long_url": "https://new.com", "alias": "promo",
+		"max_clicks": 0, "status": "inactive",
+	}
+	if len(ch) != len(want) {
+		t.Fatalf("changes = %v, want %v", ch, want)
+	}
+	for k, v := range want {
+		if fmt.Sprintf("%v", ch[k]) != fmt.Sprintf("%v", v) {
+			t.Fatalf("changes[%q] = %v, want %v", k, ch[k], v)
+		}
+	}
+	if _, ok := ch["password"]; ok {
+		t.Fatal("blank password must not be sent")
+	}
+}
+
+// 'e' opens the editor pre-filled with the selected link.
+func TestEditKeyOpensPrefilledForm(t *testing.T) {
+	m := newLinksModelWithPage(t, "http://unused.invalid")
+	m, cmd := pressKey(t, m, 'e')
+	if !m.edit.open || cmd == nil {
+		t.Fatal("e should open the edit form")
+	}
+	if m.edit.vals.longURL != "https://a.com" || m.edit.vals.alias != "first" {
+		t.Fatalf("form not pre-filled: %+v", m.edit.vals)
 	}
 }
