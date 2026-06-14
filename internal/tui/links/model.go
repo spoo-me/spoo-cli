@@ -1,5 +1,5 @@
 // Package tui contains the interactive Bubble Tea views.
-package tui
+package links
 
 import (
 	"strconv"
@@ -59,10 +59,10 @@ type statsEntry struct {
 	err error
 }
 
-// LinksModel is the interactive link browser: a paginated table over
+// Model is the interactive link browser: a paginated table over
 // GET /api/v1/urls with open/copy/toggle/delete actions, live search
 // (/), sort cycling (s), and a master-detail pane (enter).
-type LinksModel struct {
+type Model struct {
 	client      *api.Client
 	apiBase     string
 	openBrowser func(string) error
@@ -91,7 +91,7 @@ type LinksModel struct {
 	height       int
 }
 
-func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, openBrowser, copyText func(string) error) LinksModel {
+func New(client *api.Client, apiBase string, opts api.ListURLsOptions, openBrowser, copyText func(string) error) Model {
 	if opts.PageSize <= 0 {
 		opts.PageSize = defaultPageSize
 	}
@@ -110,7 +110,7 @@ func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, open
 	pager.PerPage = opts.PageSize
 	pager.ActiveDot = lipgloss.NewStyle().Foreground(ui.Accent).Render("●")
 	pager.InactiveDot = ui.Dim.Render("○")
-	return LinksModel{
+	return Model{
 		client:      client,
 		apiBase:     apiBase,
 		openBrowser: openBrowser,
@@ -142,19 +142,19 @@ func linkColumns(width int) []table.Column {
 }
 
 // splitActive reports whether the side-by-side layout is in effect.
-func (m LinksModel) splitActive() bool {
+func (m Model) splitActive() bool {
 	return m.showDetail && m.width >= splitMinWidth
 }
 
 // splitWidths returns the table and detail-pane widths for the split layout.
-func (m LinksModel) splitWidths() (tableW, detailW int) {
+func (m Model) splitWidths() (tableW, detailW int) {
 	tableW = m.width * 11 / 20 // ~55% list, ~45% detail
 	detailW = m.width - tableW - 2
 	return tableW, detailW
 }
 
 // relayout resizes the table for the current width and detail state.
-func (m *LinksModel) relayout() {
+func (m *Model) relayout() {
 	tw := m.width
 	if m.splitActive() {
 		tw, _ = m.splitWidths()
@@ -168,7 +168,7 @@ func (m *LinksModel) relayout() {
 
 // syncPager drives the (display-only) paginator from the server's
 // page data: dots for a handful of pages, a 1/N readout beyond that.
-func (m *LinksModel) syncPager() {
+func (m *Model) syncPager() {
 	if m.page == nil {
 		return
 	}
@@ -184,9 +184,9 @@ func (m *LinksModel) syncPager() {
 	}
 }
 
-func (m LinksModel) Init() tea.Cmd { return m.fetch(m.pageNo) }
+func (m Model) Init() tea.Cmd { return m.fetch(m.pageNo) }
 
-func (m LinksModel) selected() *api.URLItem {
+func (m Model) selected() *api.URLItem {
 	if m.page == nil || len(m.page.Items) == 0 {
 		return nil
 	}
@@ -197,7 +197,7 @@ func (m LinksModel) selected() *api.URLItem {
 	return &m.page.Items[i]
 }
 
-func (m LinksModel) shortURL(it *api.URLItem) string {
+func (m Model) shortURL(it *api.URLItem) string {
 	if it.Domain != "" {
 		return "https://" + it.Domain + "/" + it.Alias
 	}
@@ -213,7 +213,7 @@ func nextSortField(current string) string {
 	return sortFields[0]
 }
 
-func (m LinksModel) rows() []table.Row {
+func (m Model) rows() []table.Row {
 	rows := make([]table.Row, 0, len(m.page.Items))
 	for _, it := range m.page.Items {
 		rows = append(rows, table.Row{
@@ -228,4 +228,4 @@ func (m LinksModel) rows() []table.Row {
 }
 
 // Err reports a fetch error that ended the session, if any.
-func (m LinksModel) Err() error { return m.err }
+func (m Model) Err() error { return m.err }

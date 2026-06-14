@@ -1,4 +1,4 @@
-package tui
+package links
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
-func (m LinksModel) fetch(pageNo int) tea.Cmd {
+func (m Model) fetch(pageNo int) tea.Cmd {
 	opts := m.opts
 	opts.Page = pageNo
 	client := m.client
@@ -22,7 +22,7 @@ func (m LinksModel) fetch(pageNo int) tea.Cmd {
 	}
 }
 
-func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -96,7 +96,7 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateEdit drives the embedded edit form; on submit it stages the
 // changed fields and pops a save confirmation.
-func (m LinksModel) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m Model) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	var done, aborted bool
 	m.edit, cmd, done, aborted = m.edit.update(msg)
@@ -122,7 +122,7 @@ func (m LinksModel) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateConfirm resolves the shared confirmation dialog and runs the
 // tagged action when the user commits.
-func (m LinksModel) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var confirmed bool
 	var cmd tea.Cmd
 	m.confirm, confirmed, cmd = m.confirm.handle(msg)
@@ -143,7 +143,7 @@ func (m LinksModel) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // applyPATCH sends the staged edit and reports the outcome.
-func (m LinksModel) applyPATCH(id string, fields map[string]any) tea.Cmd {
+func (m Model) applyPATCH(id string, fields map[string]any) tea.Cmd {
 	client := m.client
 	return func() tea.Msg {
 		_, err := client.UpdateURL(context.Background(), id, fields)
@@ -152,7 +152,7 @@ func (m LinksModel) applyPATCH(id string, fields map[string]any) tea.Cmd {
 }
 
 // deleteURL removes a link by id and reports the outcome.
-func (m LinksModel) deleteURL(id string) tea.Cmd {
+func (m Model) deleteURL(id string) tea.Cmd {
 	client := m.client
 	return func() tea.Msg {
 		err := client.DeleteURL(context.Background(), id)
@@ -161,7 +161,7 @@ func (m LinksModel) deleteURL(id string) tea.Cmd {
 }
 
 // updateQR handles keys while the QR dialog is up.
-func (m LinksModel) updateQR(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateQR(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "ctrl+c":
 		return m, tea.Quit
@@ -179,7 +179,7 @@ func (m LinksModel) updateQR(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // updateSearch handles keys while the search box is focused.
-func (m LinksModel) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
 		m.searching = false
@@ -200,7 +200,7 @@ func (m LinksModel) updateSearch(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 // updateBrowse handles keys in browse mode. The detail pane mirrors the
 // selection, so navigation stays live while it is open.
-func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m Model) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	key := msg.String()
 	// action keys return here and are never forwarded to the table —
 	// its default keymap also binds some of them (e.g. 'd' is half
@@ -303,7 +303,7 @@ func (m LinksModel) updateBrowse(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // scheduleStats arms the debounce timer for the current selection.
-func (m *LinksModel) scheduleStats() tea.Cmd {
+func (m *Model) scheduleStats() tea.Cmd {
 	it := m.selected()
 	if it == nil {
 		return nil
@@ -318,7 +318,7 @@ func (m *LinksModel) scheduleStats() tea.Cmd {
 	})
 }
 
-func (m LinksModel) fetchStats(alias string) tea.Cmd {
+func (m Model) fetchStats(alias string) tea.Cmd {
 	client := m.client
 	return func() tea.Msg {
 		// the endpoint defaults to a 7-day window; ask for the maximum
@@ -333,21 +333,21 @@ func (m LinksModel) fetchStats(alias string) tea.Cmd {
 	}
 }
 
-func (m LinksModel) openStatus(it *api.URLItem) string {
+func (m Model) openStatus(it *api.URLItem) string {
 	if err := m.openBrowser(m.shortURL(it)); err != nil {
 		return ui.Err.Render("✗ " + err.Error())
 	}
 	return ui.Dim.Render("opened " + m.shortURL(it))
 }
 
-func (m LinksModel) copyStatus(it *api.URLItem) string {
+func (m Model) copyStatus(it *api.URLItem) string {
 	if err := m.copyText(m.shortURL(it)); err != nil {
 		return ui.Err.Render("✗ " + err.Error())
 	}
 	return ui.OK.Render("✓ copied " + m.shortURL(it))
 }
 
-func (m LinksModel) toggleStatus(it *api.URLItem) tea.Cmd {
+func (m Model) toggleStatus(it *api.URLItem) tea.Cmd {
 	client := m.client
 	id, alias, status := it.ID, it.Alias, it.Status
 	return func() tea.Msg {

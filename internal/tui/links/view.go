@@ -1,4 +1,4 @@
-package tui
+package links
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ import (
 )
 
 // qrView is the QR dialog box; the host overlays it via overlayCenter.
-func (m LinksModel) qrView() string {
+func (m Model) qrView() string {
 	body := []string{
 		ui.Title.Render("✦ " + m.qrURL),
 		"",
@@ -29,7 +29,7 @@ func (m LinksModel) qrView() string {
 		Render(strings.Join(body, "\n"))
 }
 
-func (m LinksModel) View() tea.View {
+func (m Model) View() tea.View {
 	var b strings.Builder
 
 	title := ui.Title.Render("spoo links")
@@ -90,7 +90,7 @@ func (m LinksModel) View() tea.View {
 }
 
 // detailView renders the selected link's full record at the given width.
-func (m LinksModel) detailView(width int) string {
+func (m Model) detailView(width int) string {
 	it := m.selected()
 	box := ui.Box.Width(max(40, width))
 	if it == nil {

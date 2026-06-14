@@ -1,4 +1,4 @@
-package tui
+package links
 
 import (
 	"fmt"
@@ -16,12 +16,12 @@ import (
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 )
 
-func newLinksModelWithPage(t *testing.T, srvURL string) LinksModel {
+func newLinksModelWithPage(t *testing.T, srvURL string) Model {
 	t.Helper()
 	keyring.MockInit()
 	_ = keyring.Delete("spoo-cli", "credentials")
 	client := api.New(srvURL, auth.NewStore(t.TempDir()))
-	m := NewLinks(client, srvURL, api.ListURLsOptions{}, func(string) error { return nil }, func(string) error { return nil })
+	m := New(client, srvURL, api.ListURLsOptions{}, func(string) error { return nil }, func(string) error { return nil })
 
 	page := &api.URLPage{
 		Items: []api.URLItem{
@@ -32,19 +32,19 @@ func newLinksModelWithPage(t *testing.T, srvURL string) LinksModel {
 		Page: 1, PageSize: 20, Total: 3,
 	}
 	next, _ := m.Update(pageMsg{page: page})
-	return next.(LinksModel)
+	return next.(Model)
 }
 
-func pressKey(t *testing.T, m LinksModel, key rune) (LinksModel, tea.Cmd) {
+func pressKey(t *testing.T, m Model, key rune) (Model, tea.Cmd) {
 	t.Helper()
 	next, cmd := m.Update(tea.KeyPressMsg{Code: key, Text: string(key)})
-	return next.(LinksModel), cmd
+	return next.(Model), cmd
 }
 
-func pressEnter(t *testing.T, m LinksModel) (LinksModel, tea.Cmd) {
+func pressEnter(t *testing.T, m Model) (Model, tea.Cmd) {
 	t.Helper()
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	return next.(LinksModel), cmd
+	return next.(Model), cmd
 }
 
 // Regression: the table's default keymap binds 'd' to half-page-down.
@@ -94,7 +94,7 @@ func TestDeleteDialogEscCancels(t *testing.T) {
 		t.Fatal("expected the delete dialog after d")
 	}
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	m = next.(LinksModel)
+	m = next.(Model)
 	if m.confirm.open {
 		t.Fatal("esc should close the delete dialog without deleting")
 	}
@@ -115,7 +115,7 @@ func TestFetchCarriesOptions(t *testing.T) {
 
 	keyring.MockInit()
 	client := api.New(srv.URL, auth.NewStore(t.TempDir()))
-	m := NewLinks(client, srv.URL, api.ListURLsOptions{
+	m := New(client, srv.URL, api.ListURLsOptions{
 		SortBy: "last_click", PageSize: 50, Status: "INACTIVE", Search: "demo",
 	}, nil, nil)
 	m.Init()() // run the initial fetch command
@@ -132,7 +132,7 @@ func TestFetchCarriesOptions(t *testing.T) {
 func TestDefaultSortIsTotalClicks(t *testing.T) {
 	keyring.MockInit()
 	client := api.New("http://unused.invalid", auth.NewStore(t.TempDir()))
-	m := NewLinks(client, "http://unused.invalid", api.ListURLsOptions{}, nil, nil)
+	m := New(client, "http://unused.invalid", api.ListURLsOptions{}, nil, nil)
 	if m.opts.SortBy != "total_clicks" {
 		t.Fatalf("default sort = %q, want total_clicks", m.opts.SortBy)
 	}
@@ -180,7 +180,7 @@ func TestSearchModeAppliesQuery(t *testing.T) {
 		m, _ = pressKey(t, m, r)
 	}
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = next.(LinksModel)
+	m = next.(Model)
 	if m.searching || m.opts.Search != "abc" {
 		t.Fatalf("searching=%v search=%q, want applied abc", m.searching, m.opts.Search)
 	}
@@ -201,7 +201,7 @@ func TestSearchModeEscCancels(t *testing.T) {
 		m, _ = pressKey(t, m, r)
 	}
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	m = next.(LinksModel)
+	m = next.(Model)
 	if m.searching || m.opts.Search != "" {
 		t.Fatalf("searching=%v search=%q, want cancelled empty", m.searching, m.opts.Search)
 	}
@@ -212,12 +212,12 @@ func TestSearchModeEscCancels(t *testing.T) {
 func TestEnterOpensDetailAndEscCloses(t *testing.T) {
 	m := newLinksModelWithPage(t, "http://unused.invalid")
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = next.(LinksModel)
+	m = next.(Model)
 	if !m.showDetail {
 		t.Fatal("enter did not open the detail pane")
 	}
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	m = next.(LinksModel)
+	m = next.(Model)
 	if m.showDetail {
 		t.Fatal("esc did not close the detail pane")
 	}
@@ -230,7 +230,7 @@ func TestEnterOpensDetailAndEscCloses(t *testing.T) {
 func TestDetailFollowsSelection(t *testing.T) {
 	m := newLinksModelWithPage(t, "http://unused.invalid")
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = next.(LinksModel)
+	m = next.(Model)
 	m, _ = pressKey(t, m, 'j') // move down while the pane is open
 	if got := m.selected().Alias; got != "second" {
 		t.Fatalf("selected = %q, want second", got)
@@ -254,7 +254,7 @@ func TestDetailDeleteTargetsSelectedItem(t *testing.T) {
 
 	m := newLinksModelWithPage(t, srv.URL)
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // open detail pane
-	m = next.(LinksModel)
+	m = next.(Model)
 
 	m, _ = pressKey(t, m, 'd')
 	for _, ch := range "first" {
@@ -274,9 +274,9 @@ func TestDetailDeleteTargetsSelectedItem(t *testing.T) {
 func TestSplitLayoutIsResponsive(t *testing.T) {
 	m := newLinksModelWithPage(t, "http://unused.invalid")
 	next, _ := m.Update(tea.WindowSizeMsg{Width: 140, Height: 40})
-	m = next.(LinksModel)
+	m = next.(Model)
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = next.(LinksModel)
+	m = next.(Model)
 	if !m.splitActive() {
 		t.Fatal("140 cols with detail open should use the split layout")
 	}
@@ -287,7 +287,7 @@ func TestSplitLayoutIsResponsive(t *testing.T) {
 	}
 
 	next, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
-	m = next.(LinksModel)
+	m = next.(Model)
 	if m.splitActive() {
 		t.Fatal("80 cols must fall back to the full-screen pane")
 	}
@@ -297,7 +297,7 @@ func TestSplitLayoutIsResponsive(t *testing.T) {
 func TestDetailViewShowsFullFields(t *testing.T) {
 	m := newLinksModelWithPage(t, "http://unused.invalid")
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = next.(LinksModel)
+	m = next.(Model)
 	view := m.View().Content
 	for _, want := range []string{"https://a.com", "short url", "password", "clicks"} {
 		if !strings.Contains(view, want) {
@@ -320,7 +320,7 @@ func TestStatsDebounceDropsStaleTicks(t *testing.T) {
 
 	m := newLinksModelWithPage(t, srv.URL)
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // opens pane, arms seq 1
-	m = next.(LinksModel)
+	m = next.(Model)
 	seq1 := m.statsSeq
 
 	m, _ = pressKey(t, m, 'j') // arms seq 2
@@ -332,7 +332,7 @@ func TestStatsDebounceDropsStaleTicks(t *testing.T) {
 	// stale ticks (seq 1 and 2) arrive — both must be dropped
 	for _, seq := range []int{seq1, seq1 + 1} {
 		next, cmd := m.Update(statsTickMsg{seq: seq})
-		m = next.(LinksModel)
+		m = next.(Model)
 		if cmd != nil {
 			t.Fatalf("stale tick seq=%d triggered a fetch", seq)
 		}
@@ -343,7 +343,7 @@ func TestStatsDebounceDropsStaleTicks(t *testing.T) {
 
 	// the current tick fetches exactly once, for the rested row
 	next, cmd := m.Update(statsTickMsg{seq: m.statsSeq})
-	m = next.(LinksModel)
+	m = next.(Model)
 	if cmd == nil {
 		t.Fatal("current tick did not fetch")
 	}
@@ -362,7 +362,7 @@ func TestStatsCacheSkipsRefetch(t *testing.T) {
 	m := newLinksModelWithPage(t, "http://unused.invalid")
 	m.stats["first"] = statsEntry{res: &api.StatsResponse{}}
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = next.(LinksModel)
+	m = next.(Model)
 	if cmd != nil {
 		t.Fatal("opening the pane on a cached row scheduled a fetch")
 	}
@@ -375,7 +375,7 @@ func TestStatsCacheSkipsRefetch(t *testing.T) {
 func TestDetailRendersAnalytics(t *testing.T) {
 	m := newLinksModelWithPage(t, "http://unused.invalid")
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = next.(LinksModel)
+	m = next.(Model)
 	next, _ = m.Update(statsMsg{alias: "first", res: &api.StatsResponse{
 		Summary: api.StatsSummary{TotalClicks: 10, UniqueClicks: 4, AvgRedirectionTime: 42},
 		Metrics: map[string][]map[string]any{
@@ -385,7 +385,7 @@ func TestDetailRendersAnalytics(t *testing.T) {
 			"clicks_by_country": {{"country": "IN", "clicks": 10.0}},
 		},
 	}})
-	m = next.(LinksModel)
+	m = next.(Model)
 	view := m.View().Content
 	for _, want := range []string{"analytics", "4 of 10 clicks", "Chrome", "(90%)", "Windows", "top country", "42ms"} {
 		if !strings.Contains(view, want) {
@@ -511,7 +511,7 @@ func TestEditFormInteraction(t *testing.T) {
 		t.Fatal("edit form should be titled and boxed")
 	}
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
-	m = next.(LinksModel)
+	m = next.(Model)
 	if m.edit.open || m.confirm.open {
 		t.Fatal("esc should close the edit form with no save dialog")
 	}
@@ -520,18 +520,18 @@ func TestEditFormInteraction(t *testing.T) {
 	m, _ = pressKey(t, m, 'e')
 	for i := 0; i < statusField; i++ {
 		next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-		m = next.(LinksModel)
+		m = next.(Model)
 	}
 	if m.edit.focus != statusField {
 		t.Fatalf("focus = %d, want the status field", m.edit.focus)
 	}
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeySpace}) // toggle active→inactive
-	m = next.(LinksModel)
+	m = next.(Model)
 	if m.edit.status != "inactive" {
 		t.Fatalf("status toggle = %q, want inactive", m.edit.status)
 	}
 	next, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // save
-	m = next.(LinksModel)
+	m = next.(Model)
 	if !m.confirm.open || m.confirm.tag != "save" {
 		t.Fatalf("enter should stage a save confirmation: %+v", m.confirm)
 	}

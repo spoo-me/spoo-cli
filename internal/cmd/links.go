@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/spoo-me/spoo-cli/internal/api"
-	"github.com/spoo-me/spoo-cli/internal/tui"
+	"github.com/spoo-me/spoo-cli/internal/tui/links"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -43,12 +43,12 @@ toggle, delete). Piped or with --json it prints the list and exits.`,
 			if asJSON || !stdoutIsTerminal(cmd) {
 				return printLinksList(cmd, d, opts, asJSON)
 			}
-			model := tui.NewLinks(d.client, d.cfg.APIBase, opts, browser.OpenURL, clipboard.WriteAll)
+			model := links.New(d.client, d.cfg.APIBase, opts, browser.OpenURL, clipboard.WriteAll)
 			final, err := tea.NewProgram(model).Run()
 			if err != nil {
 				return err
 			}
-			if m, ok := final.(tui.LinksModel); ok && m.Err() != nil {
+			if m, ok := final.(links.Model); ok && m.Err() != nil {
 				return m.Err()
 			}
 			return nil

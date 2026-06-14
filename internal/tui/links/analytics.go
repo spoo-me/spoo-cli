@@ -1,4 +1,4 @@
-package tui
+package links
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 
 // analyticsLines renders the per-link stats section of the detail pane
 // from the debounced cache; before the fetch lands it shows a loader.
-func (m LinksModel) analyticsLines(alias string, label func(string) string, width int) []string {
+func (m Model) analyticsLines(alias string, label func(string) string, width int) []string {
 	e, ok := m.stats[alias]
 	if !ok {
 		return []string{ui.Dim.Render("loading…")}
