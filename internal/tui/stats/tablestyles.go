@@ -10,21 +10,19 @@ import (
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
-// tableStyle selects how a panel's table view is drawn.
+// tableStyle selects how a table's header and rows are drawn. Both
+// variants put the header in an inverted band (the winner of a live
+// A/B); they differ only in whether rows get ├─ tree branches.
 type tableStyle int
 
 const (
-	tsUnderline    tableStyle = iota // UPPERCASE header over a ─ rule
-	tsHeaderBand                     // inverted header strip
-	tsSelectedBand                   // cursor row gets a background band
-	tsTree                           // ├─ rows
-	tsTreeBand                       // tree rows under a header band
+	tsHeaderBand tableStyle = iota // header band, flat rows (the time table)
+	tsTreeBand                     // header band over ├─ tree rows (panels)
 )
 
 var (
-	tsBandBG  = lipgloss.NewStyle().Background(lipgloss.Color("#2D2B3A")).Foreground(lipgloss.Color("#C4B5FD")).Bold(true)
-	tsSelBand = lipgloss.NewStyle().Background(lipgloss.Color("#312E45")).Foreground(lipgloss.Color("#C4B5FD")).Bold(true)
-	tsHeader  = lipgloss.NewStyle().Foreground(ui.Muted).Bold(true)
+	tsBandBG = lipgloss.NewStyle().Background(lipgloss.Color("#2D2B3A")).Foreground(lipgloss.Color("#C4B5FD")).Bold(true)
+	tsHeader = lipgloss.NewStyle().Foreground(ui.Muted).Bold(true)
 )
 
 // styledTable renders header+rows in the given style. labelIdx names
@@ -36,7 +34,7 @@ func styledTable(ts tableStyle, labelIdx int, widths []int, header []string, row
 		rows = rows[:maxRows]
 	}
 
-	tree := ts == tsTree || ts == tsTreeBand
+	tree := ts == tsTreeBand
 	w := append([]int(nil), widths...)
 	if tree {
 		w[labelIdx] = max(6, w[labelIdx]-3) // branch glyphs take three columns
@@ -53,25 +51,8 @@ func styledTable(ts tableStyle, labelIdx int, widths []int, header []string, row
 		return " " + strings.Join(parts, " ")
 	}
 
-	var out []string
-	switch ts {
-	case tsHeaderBand, tsTreeBand:
-		// extend the band across the full panel width
-		out = append(out, tsBandBG.Render(kit.PadToWidth(fmtRow(header), width)))
-	case tsUnderline:
-		up := make([]string, len(header))
-		for i, h := range header {
-			up[i] = strings.ToUpper(h)
-		}
-		out = append(out, tsHeader.Render(fmtRow(up)))
-		rule := 1
-		for _, x := range w {
-			rule += x + 1
-		}
-		out = append(out, ui.Dim.Render(strings.Repeat("─", min(rule, width))))
-	default:
-		out = append(out, tsHeader.Render(fmtRow(header)))
-	}
+	// the header band stretches across the full panel width
+	out := []string{tsBandBG.Render(kit.PadToWidth(fmtRow(header), width))}
 
 	for i, r := range rows {
 		plain := fmtRow(r)
@@ -88,10 +69,8 @@ func styledTable(ts tableStyle, labelIdx int, widths []int, header []string, row
 		}
 		var line string
 		switch {
-		// selected rows get ONE style over the whole plain line — a
-		// pre-styled branch would embed a reset that cuts it short
-		case i == sel && ts == tsSelectedBand:
-			line = tsSelBand.Render(kit.PadToWidth(content, width))
+		// a selected row renders as ONE styled run over the whole line —
+		// a pre-styled branch would embed a reset that cuts it short
 		case i == sel:
 			line = ui.Title.Render(content)
 		case tree:

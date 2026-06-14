@@ -16,7 +16,7 @@ func TestTreeSelectedRowFullyStyled(t *testing.T) {
 	header := []string{"browser", "clicks", "share"}
 	rows := [][]string{{"Chrome", "49", "91%"}, {"Safari", "3", "6%"}}
 
-	out := styledTable(tsTree, 0, widths, header, rows, 0, 10, 40)
+	out := styledTable(tsTreeBand, 0, widths, header, rows, 0, 10, 40)
 	lines := strings.Split(out, "\n")
 	selLine := lines[1] // header is line 0
 
