@@ -35,8 +35,8 @@ func renderBarChart(title string, points []api.MetricPoint, total float64) strin
 		if total > 0 {
 			pct = fmt.Sprintf(" (%.0f%%)", p.Value/total*100)
 		}
-		b.WriteString(fmt.Sprintf("  %-16s %s %.0f%s\n",
-			truncate(p.Label, 16), ui.OK.Render(bar), p.Value, ui.Dim.Render(pct)))
+		fmt.Fprintf(&b, "  %-16s %s %.0f%s\n",
+			truncate(p.Label, 16), ui.OK.Render(bar), p.Value, ui.Dim.Render(pct))
 	}
 	return b.String()
 }

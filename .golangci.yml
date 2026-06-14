@@ -3,3 +3,25 @@ linters:
   default: standard
   enable:
     - misspell
+  settings:
+    errcheck:
+      # In a CLI, writing to stdout / HTTP responses and best-effort cleanup
+      # (Close / Flush / Shutdown) can't meaningfully recover from an error —
+      # don't flag these idiomatic unchecked returns.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*net/http.Server).Serve
+        - (*net/http.Server).Shutdown
+        - (*text/tabwriter.Writer).Flush
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+  exclusions:
+    paths:
+      # Throwaway A/B scaffolding (gitignored, never shipped).
+      - catalogue
+    rules:
+      # Test scaffolding (mock handlers, cleanup) isn't worth errcheck noise.
+      - path: _test\.go
+        linters:
+          - errcheck
