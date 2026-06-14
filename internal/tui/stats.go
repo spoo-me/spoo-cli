@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"image/color"
-	"math"
 	"os"
 	"sort"
 	"strings"
@@ -935,40 +934,6 @@ func (m StatsModel) metricHue() color.Color {
 		return ui.Pink
 	}
 	return ui.Blue
-}
-
-// niceCeil rounds up to a 1/2/2.5/5×10ⁿ boundary so axis steps are even.
-func niceCeil(v float64) float64 {
-	if v <= 5 {
-		return 5
-	}
-	mag := math.Pow(10, math.Floor(math.Log10(v)))
-	for _, mult := range []float64{1, 2, 2.5, 5, 10} {
-		if v <= mult*mag {
-			return mult * mag
-		}
-	}
-	return 10 * mag
-}
-
-// bucketTimeLayouts are the formats the backend uses for time-bucket
-// labels across its hourly/daily/weekly/monthly strategies.
-var bucketTimeLayouts = []string{
-	"2006-01-02T15:04:05Z07:00",
-	"2006-01-02 15:04",
-	"2006-01-02T15:04",
-	"2006-01-02 15",
-	"2006-01-02",
-	"2006-01",
-}
-
-func parseBucketTime(label string) (time.Time, bool) {
-	for _, layout := range bucketTimeLayouts {
-		if ts, err := time.Parse(layout, label); err == nil {
-			return ts, true
-		}
-	}
-	return time.Time{}, false
 }
 
 // timeChart renders clicks and unique clicks as braille lines.

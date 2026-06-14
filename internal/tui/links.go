@@ -734,31 +734,6 @@ func (m LinksModel) analyticsLines(alias string, label func(string) string, widt
 	}
 }
 
-// miniSpark draws a compact sparkline covering the WHOLE series: when
-// there are more points than columns they are summed into buckets, so
-// old activity is never silently cut off the left edge.
-func miniSpark(pts []api.MetricPoint, width int) string {
-	if len(pts) == 0 || width < 1 {
-		return ui.Dim.Render("no data")
-	}
-	buckets := make([]float64, min(width, len(pts)))
-	for i, p := range pts {
-		buckets[i*len(buckets)/len(pts)] += p.Value
-	}
-	var maxV float64
-	for _, v := range buckets {
-		maxV = max(maxV, v)
-	}
-	if maxV == 0 {
-		return ui.Dim.Render("flat")
-	}
-	var b strings.Builder
-	for _, v := range buckets {
-		b.WriteRune(ui.SparkRunes[int(v/maxV*float64(len(ui.SparkRunes)-1))])
-	}
-	return b.String()
-}
-
 // topOf names the dominant label of a dimension with its share; format
 // optionally decorates the label (e.g. country flag emoji).
 func topOf(res *api.StatsResponse, dimension string, total float64, format func(string) string) string {
