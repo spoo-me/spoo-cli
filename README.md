@@ -1,20 +1,6 @@
-<div align="center">
-<pre>
-          :+#%%#*=:
-        -%@@@@@@@@@#.
-       #@@@@@@@@@@@@@.
-     .%@@@@@@@@@@@@@@+
-    :@@@@@@@@@@@@@@@@+     <b>spoo</b>
-  .+@@@@@@@@@@@@@@@@@.     the spoo.me CLI
-.*@@@@@@@@@@@@@@@@@@+
-+@@@@@@@@@@@@@@@@@@#
-    =@@@@@@@@@@@@@%.
-     *%%*+=*@@@@@#.
-            :##*-
-</pre>
-</div>
-
-<p align="center">Shorten, browse, and analyze your spoo.me links without leaving the terminal 🚀</p>
+<p align="center">
+<img src=".github/images/banner.png" alt="spoo — the spoo.me CLI" width="680">
+</p>
 
 <p align="center">
     <a href="#-features"><kbd>🔥 Features</kbd></a>
