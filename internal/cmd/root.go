@@ -6,6 +6,7 @@ import (
 	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/auth"
 	"github.com/spoo-me/spoo-cli/internal/config"
+	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
 // deps bundles everything a command needs. Factory is a package var so
@@ -31,7 +32,7 @@ func NewRootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "spoo",
 		Short:         "Shorten links and manage your spoo.me account from the terminal",
-		Long:          "spoo is the official command-line client for spoo.me —\nshorten links, browse analytics, and manage your account without leaving the terminal.",
+		Long:          ui.Banner() + "\n\nShorten links, browse analytics, and manage your account without leaving the terminal.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
