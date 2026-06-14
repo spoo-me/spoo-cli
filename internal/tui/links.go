@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/paginator"
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -71,6 +72,7 @@ type LinksModel struct {
 	opts api.ListURLsOptions // current query: search, sort, status, page size
 
 	tbl          table.Model
+	pager        paginator.Model
 	searchBox    textinput.Model
 	searching    bool
 	edit         editForm       // 'e' opens the pre-filled link editor
@@ -104,6 +106,11 @@ func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, open
 	)
 	search := textinput.New()
 	search.Placeholder = "search alias or destination…"
+	pager := paginator.New()
+	pager.Type = paginator.Dots
+	pager.PerPage = opts.PageSize
+	pager.ActiveDot = lipgloss.NewStyle().Foreground(ui.Accent).Render("●")
+	pager.InactiveDot = ui.Dim.Render("○")
 	return LinksModel{
 		client:      client,
 		apiBase:     apiBase,
@@ -111,6 +118,7 @@ func NewLinks(client *api.Client, apiBase string, opts api.ListURLsOptions, open
 		copyText:    copyText,
 		opts:        opts,
 		tbl:         tbl,
+		pager:       pager,
 		searchBox:   search,
 		edit:        newEditForm(),
 		confirm:     newConfirmDialog(),
@@ -156,6 +164,24 @@ func (m *LinksModel) relayout() {
 	m.tbl.SetWidth(tw)
 	if m.height > 0 {
 		m.tbl.SetHeight(max(5, m.height-6))
+	}
+}
+
+// syncPager drives the (display-only) paginator from the server's
+// page data: dots for a handful of pages, a 1/N readout beyond that.
+func (m *LinksModel) syncPager() {
+	if m.page == nil {
+		return
+	}
+	if m.page.PageSize > 0 {
+		m.pager.PerPage = m.page.PageSize
+	}
+	m.pager.SetTotalPages(m.page.Total)
+	m.pager.Page = m.page.Page - 1 // paginator is 0-indexed
+	if m.pager.TotalPages > 12 {
+		m.pager.Type = paginator.Arabic
+	} else {
+		m.pager.Type = paginator.Dots
 	}
 }
 
@@ -205,6 +231,7 @@ func (m LinksModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.page = msg.page
 		m.pageNo = msg.page.Page
+		m.syncPager()
 		m.tbl.SetRows(m.rows())
 		m.tbl.GotoTop()
 		m.status = ""
@@ -569,8 +596,11 @@ func (m LinksModel) View() tea.View {
 	var b strings.Builder
 
 	title := ui.Title.Render("spoo links")
+	if m.page != nil && m.pager.TotalPages > 1 {
+		title += ui.Dim.Render("  ") + m.pager.View()
+	}
 	if m.page != nil {
-		title += ui.Dim.Render(fmt.Sprintf("  page %d · %d total", m.pageNo, m.page.Total))
+		title += ui.Dim.Render(fmt.Sprintf("  %d total", m.page.Total))
 	}
 	title += ui.Dim.Render("  sort: " + strings.ReplaceAll(m.opts.SortBy, "_", " "))
 	if m.opts.Status != "" {
