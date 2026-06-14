@@ -20,7 +20,7 @@ func newDomainsCmd() *cobra.Command {
 			return runDomainsList(cmd)
 		},
 	}
-	cmd.AddCommand(newDomainsAddCmd(), newDomainsVerifyCmd(), newDomainsRemoveCmd())
+	cmd.AddCommand(newDomainsAddCmd(), newDomainsVerifyCmd(), newDomainsConfigCmd(), newDomainsRemoveCmd())
 	return cmd
 }
 
@@ -132,6 +132,98 @@ func newDomainsVerifyCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newDomainsConfigCmd() *cobra.Command {
+	var rootRedirect, notFound, robots string
+	cmd := &cobra.Command{
+		Use:   "config <fqdn-or-id>",
+		Short: "View or set a domain's routing (apex redirect, 404 fallback, robots.txt)",
+		Long: `View or set a custom domain's per-domain routing.
+
+Run bare to print the current config. Pass a flag to change one field;
+pass it empty (e.g. --root-redirect "") to clear it. Omitted flags are
+left untouched.
+
+  root-redirect       where GET / on the domain sends visitors (302)
+  not-found-redirect  fallback for any path that doesn't match an alias
+  robots-txt          override the served /robots.txt body`,
+		Example: `  spoo domains config links.acme.com
+  spoo domains config links.acme.com --root-redirect https://acme.com
+  spoo domains config links.acme.com --not-found-redirect https://acme.com/404
+  spoo domains config links.acme.com --root-redirect ""   # clear it`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			d, err := newDeps()
+			if err != nil {
+				return err
+			}
+			dom, err := resolveDomain(cmd, d, args[0])
+			if err != nil {
+				return err
+			}
+
+			fields := map[string]any{}
+			if cmd.Flags().Changed("root-redirect") {
+				fields["root_redirect"] = nilIfEmpty(rootRedirect)
+			}
+			if cmd.Flags().Changed("not-found-redirect") {
+				fields["not_found_redirect"] = nilIfEmpty(notFound)
+			}
+			if cmd.Flags().Changed("robots-txt") {
+				fields["custom_robots_txt"] = nilIfEmpty(robots)
+			}
+
+			// no flags → just show the current config
+			if len(fields) == 0 {
+				return showDomainConfig(cmd, dom)
+			}
+			updated, err := d.client.UpdateDomain(cmd.Context(), dom.ID, fields)
+			if err != nil {
+				return err
+			}
+			if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+				enc := json.NewEncoder(cmd.OutOrStdout())
+				enc.SetIndent("", "  ")
+				return enc.Encode(updated)
+			}
+			fmt.Fprintln(prettyOut(cmd), ui.OK.Render("✓ updated routing for ")+ui.Title.Render(updated.FQDN))
+			return showDomainConfig(cmd, updated)
+		},
+	}
+	cmd.Flags().StringVar(&rootRedirect, "root-redirect", "", "destination for GET / (302); empty clears")
+	cmd.Flags().StringVar(&notFound, "not-found-redirect", "", "fallback for unmatched paths; empty clears")
+	cmd.Flags().StringVar(&robots, "robots-txt", "", "override /robots.txt body; empty clears")
+	return cmd
+}
+
+// showDomainConfig prints a domain's routing as a key/value block.
+func showDomainConfig(cmd *cobra.Command, dom *api.Domain) error {
+	if asJSON, _ := cmd.Flags().GetBool("json"); asJSON {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(dom)
+	}
+	out := prettyOut(cmd)
+	fmt.Fprintln(out, ui.Title.Render(dom.FQDN)+ui.Dim.Render("  ("+dom.Status+")"))
+	row := func(label, value string) {
+		if value == "" {
+			value = ui.Dim.Render("not set")
+		}
+		fmt.Fprintf(out, "  %s %s\n", ui.Dim.Render(fmt.Sprintf("%-18s", label)), value)
+	}
+	row("root redirect", dom.RootRedirect)
+	row("not-found redirect", dom.NotFoundRedirect)
+	return nil
+}
+
+// nilIfEmpty maps "" to a nil interface so the JSON body carries null
+// (the backend's "clear this field" signal) rather than an empty string.
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 func newDomainsRemoveCmd() *cobra.Command {

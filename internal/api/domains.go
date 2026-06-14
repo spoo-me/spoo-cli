@@ -56,6 +56,18 @@ func (c *Client) VerifyDomain(ctx context.Context, id string) (*Domain, error) {
 	return &out, nil
 }
 
+// UpdateDomain patches a domain's per-domain routing config. fields
+// holds only the keys to change (root_redirect, not_found_redirect,
+// custom_robots_txt); a nil value clears that field, an omitted key
+// leaves it untouched — the backend distinguishes via model_fields_set.
+func (c *Client) UpdateDomain(ctx context.Context, id string, fields map[string]any) (*Domain, error) {
+	var out Domain
+	if err := c.do(ctx, http.MethodPatch, "/api/v1/custom-domains/"+id, nil, fields, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 type DomainDeleteResult struct {
 	ID          string `json:"id"`
 	FQDN        string `json:"fqdn"`
