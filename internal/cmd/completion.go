@@ -102,35 +102,6 @@ func completeKeyID(cmd *cobra.Command, args []string, toComplete string) ([]stri
 	return out, cobra.ShellCompDirectiveNoFileComp
 }
 
-// apiScopes are the permission scopes accepted by `keys create --scopes`,
-// mirroring the set documented in that command's help.
-var apiScopes = []string{
-	"shorten:create", "urls:read", "urls:manage", "stats:read",
-	"domains:read", "domains:manage", "admin:all",
-}
-
-// completeScopes completes the comma-separated --scopes value: it keeps the
-// scopes already typed and offers the rest. cobra hands the whole value as
-// toComplete for slice flags, so we split on the last comma ourselves and
-// use NoSpace so the user can keep appending.
-func completeScopes(_ *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	prefix, cur := "", toComplete
-	if i := strings.LastIndex(toComplete, ","); i >= 0 {
-		prefix, cur = toComplete[:i+1], toComplete[i+1:]
-	}
-	chosen := make(map[string]bool)
-	for _, s := range strings.Split(prefix, ",") {
-		chosen[s] = true
-	}
-	var out []string
-	for _, s := range apiScopes {
-		if !chosen[s] && strings.HasPrefix(s, cur) {
-			out = append(out, prefix+s)
-		}
-	}
-	return out, cobra.ShellCompDirectiveNoSpace | cobra.ShellCompDirectiveNoFileComp
-}
-
 // completeDomain completes --domain with the distinct custom domains that
 // already appear on your links. There's no domains-list endpoint, so this
 // is the practical best-effort source (a domain you've never used yet

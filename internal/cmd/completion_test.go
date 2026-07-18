@@ -110,27 +110,6 @@ func TestCompleteFixedFlags(t *testing.T) {
 	}
 }
 
-func TestCompleteScopesCommaAware(t *testing.T) {
-	pointDepsAt(t, "http://unused.invalid") // fixed list; no API call
-
-	// bare: offers the full scope set
-	out := complete(t, "keys", "create", "--scopes", "")
-	for _, want := range []string{"shorten:create", "stats:read", "admin:all"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("--scopes missing %q:\n%s", want, out)
-		}
-	}
-	// mid-list: keeps the typed prefix, drops the already-chosen scope,
-	// and narrows by the partial after the last comma
-	out = complete(t, "keys", "create", "--scopes", "shorten:create,sta")
-	if !strings.Contains(out, "shorten:create,stats:read") {
-		t.Fatalf("comma-aware completion should append stats:read:\n%s", out)
-	}
-	if strings.Contains(out, "shorten:create,shorten:create") {
-		t.Fatalf("already-chosen scope should not be re-offered:\n%s", out)
-	}
-}
-
 func TestCompleteDomainFromLinks(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte(`{"items":[

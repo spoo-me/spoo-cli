@@ -16,24 +16,6 @@ type APIKey struct {
 	ExpiresAt   int64    `json:"expires_at"`
 	Revoked     bool     `json:"revoked"`
 	TokenPrefix string   `json:"token_prefix"`
-	Token       string   `json:"token,omitempty"` // full token, present only on create
-}
-
-type CreateKeyRequest struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Scopes      []string `json:"scopes"`
-	ExpiresAt   string   `json:"expires_at,omitempty"` // ISO 8601 or epoch seconds
-}
-
-// CreateKey mints a new API key. Requires a device-flow (JWT) session;
-// the backend refuses key creation authenticated by another API key.
-func (c *Client) CreateKey(ctx context.Context, req CreateKeyRequest) (*APIKey, error) {
-	var out APIKey
-	if err := c.do(ctx, http.MethodPost, "/api/v1/keys", nil, req, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
 }
 
 func (c *Client) ListKeys(ctx context.Context) ([]APIKey, error) {
