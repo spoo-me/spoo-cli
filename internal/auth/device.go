@@ -33,17 +33,30 @@ type DeviceFlow struct {
 	Out         io.Writer // progress messages (stderr)
 }
 
+// Result carries what the flow proves back to the caller: the one-time
+// code and the PKCE verifier it must be redeemed with.
+type Result struct {
+	Code     string
+	Verifier string
+}
+
 // Run blocks until the consent callback delivers a code, the context
-// expires, or the callback is invalid. Returns the one-time code.
-func (f *DeviceFlow) Run(ctx context.Context) (string, error) {
+// expires, or the callback is invalid. Returns the one-time code plus the
+// PKCE verifier the caller must present at token exchange.
+func (f *DeviceFlow) Run(ctx context.Context) (Result, error) {
 	state, err := randomState()
 	if err != nil {
-		return "", err
+		return Result{}, err
+	}
+
+	pkce, err := newPKCE()
+	if err != nil {
+		return Result{}, err
 	}
 
 	ln, err := net.Listen("tcp", CallbackAddr)
 	if err != nil {
-		return "", fmt.Errorf("cannot listen on %s (is another spoo login running?): %w", CallbackAddr, err)
+		return Result{}, fmt.Errorf("cannot listen on %s (is another spoo login running?): %w", CallbackAddr, err)
 	}
 
 	codeCh := make(chan string, 1)
@@ -72,9 +85,9 @@ func (f *DeviceFlow) Run(ctx context.Context) (string, error) {
 	go srv.Serve(ln)
 	defer srv.Shutdown(context.Background())
 
-	authURL := fmt.Sprintf("%s/auth/device/login?app_id=%s&redirect_uri=%s&state=%s",
+	authURL := fmt.Sprintf("%s/auth/device/login?app_id=%s&redirect_uri=%s&state=%s&code_challenge=%s&code_challenge_method=S256",
 		f.APIBase, AppID,
-		url.QueryEscape("http://"+CallbackAddr+CallbackPath), state)
+		url.QueryEscape("http://"+CallbackAddr+CallbackPath), state, pkce.Challenge)
 
 	fmt.Fprintln(f.Out, "Opening your browser to authorize spoo CLI…")
 	fmt.Fprintf(f.Out, "If it doesn't open automatically, visit:\n\n  %s\n\n", authURL)
@@ -84,11 +97,11 @@ func (f *DeviceFlow) Run(ctx context.Context) (string, error) {
 
 	select {
 	case code := <-codeCh:
-		return code, nil
+		return Result{Code: code, Verifier: pkce.Verifier}, nil
 	case err := <-errCh:
-		return "", err
+		return Result{}, err
 	case <-ctx.Done():
-		return "", fmt.Errorf("login timed out: %w", ctx.Err())
+		return Result{}, fmt.Errorf("login timed out: %w", ctx.Err())
 	}
 }
 

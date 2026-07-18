@@ -20,10 +20,12 @@ type DeviceTokens struct {
 }
 
 // ExchangeDeviceCode trades a one-time device-auth code for a JWT pair.
-// The code is the credential — no prior auth is required.
-func (c *Client) ExchangeDeviceCode(ctx context.Context, code string) (*DeviceTokens, error) {
+// The code is the credential — no prior auth is required — but it must be
+// redeemed with the PKCE verifier whose S256 challenge was sent at login.
+func (c *Client) ExchangeDeviceCode(ctx context.Context, code, verifier string) (*DeviceTokens, error) {
 	var out DeviceTokens
-	if err := c.do(ctx, http.MethodPost, "/auth/device/token", nil, map[string]string{"code": code}, &out); err != nil {
+	body := map[string]string{"code": code, "code_verifier": verifier}
+	if err := c.do(ctx, http.MethodPost, "/auth/device/token", nil, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
