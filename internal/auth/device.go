@@ -3,6 +3,8 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -34,16 +36,21 @@ type DeviceFlow struct {
 }
 
 // Run blocks until the consent callback delivers a code, the context
-// expires, or the callback is invalid. Returns the one-time code.
-func (f *DeviceFlow) Run(ctx context.Context) (string, error) {
+// expires, or the callback is invalid. Returns the one-time code and the
+// PKCE verifier that must accompany it in the token exchange.
+func (f *DeviceFlow) Run(ctx context.Context) (string, string, error) {
 	state, err := randomState()
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	verifier, err := codeVerifier()
+	if err != nil {
+		return "", "", err
 	}
 
 	ln, err := net.Listen("tcp", CallbackAddr)
 	if err != nil {
-		return "", fmt.Errorf("cannot listen on %s (is another spoo login running?): %w", CallbackAddr, err)
+		return "", "", fmt.Errorf("cannot listen on %s (is another spoo login running?): %w", CallbackAddr, err)
 	}
 
 	codeCh := make(chan string, 1)
@@ -72,9 +79,10 @@ func (f *DeviceFlow) Run(ctx context.Context) (string, error) {
 	go srv.Serve(ln)
 	defer srv.Shutdown(context.Background())
 
-	authURL := fmt.Sprintf("%s/auth/device/login?app_id=%s&redirect_uri=%s&state=%s",
+	authURL := fmt.Sprintf("%s/auth/device/login?app_id=%s&redirect_uri=%s&state=%s&code_challenge=%s&code_challenge_method=S256",
 		f.APIBase, AppID,
-		url.QueryEscape("http://"+CallbackAddr+CallbackPath), state)
+		url.QueryEscape("http://"+CallbackAddr+CallbackPath), state,
+		codeChallengeS256(verifier))
 
 	fmt.Fprintln(f.Out, "Opening your browser to authorize spoo CLI…")
 	fmt.Fprintf(f.Out, "If it doesn't open automatically, visit:\n\n  %s\n\n", authURL)
@@ -84,11 +92,11 @@ func (f *DeviceFlow) Run(ctx context.Context) (string, error) {
 
 	select {
 	case code := <-codeCh:
-		return code, nil
+		return code, verifier, nil
 	case err := <-errCh:
-		return "", err
+		return "", "", err
 	case <-ctx.Done():
-		return "", fmt.Errorf("login timed out: %w", ctx.Err())
+		return "", "", fmt.Errorf("login timed out: %w", ctx.Err())
 	}
 }
 
@@ -98,4 +106,21 @@ func randomState() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// codeVerifier returns a PKCE code verifier: 32 random bytes encoded as
+// unpadded base64url, always 43 characters (RFC 7636 §4.1).
+func codeVerifier() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// codeChallengeS256 derives the S256 challenge for a verifier:
+// BASE64URL(SHA256(verifier)) without padding (RFC 7636 §4.2).
+func codeChallengeS256(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
