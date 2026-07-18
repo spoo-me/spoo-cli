@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,12 +13,22 @@ func TestExchangeDeviceCode(t *testing.T) {
 		if r.URL.Path != "/auth/device/token" || r.Method != http.MethodPost {
 			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
+		var body map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		if body["code"] != "onetimecode" {
+			t.Errorf("code = %q, want onetimecode", body["code"])
+		}
+		if body["code_verifier"] != "theverifier" {
+			t.Errorf("code_verifier = %q, want theverifier", body["code_verifier"])
+		}
 		w.Write([]byte(`{"access_token":"at","refresh_token":"rt","user":{"id":"1","email":"a@b.c","email_verified":true,"name":"A","plan":"free"}}`))
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL, newTestStore(t, nil))
-	tok, err := c.ExchangeDeviceCode(context.Background(), "onetimecode")
+	tok, err := c.ExchangeDeviceCode(context.Background(), "onetimecode", "theverifier")
 	if err != nil {
 		t.Fatal(err)
 	}

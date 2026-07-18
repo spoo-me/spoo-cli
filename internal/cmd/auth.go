@@ -61,11 +61,11 @@ func loginWithBrowser(cmd *cobra.Command, d *deps) error {
 	ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
 	defer cancel()
 
-	code, err := flow.Run(ctx)
+	code, verifier, err := flow.Run(ctx)
 	if err != nil {
 		return err
 	}
-	tokens, err := d.client.ExchangeDeviceCode(ctx, code)
+	tokens, err := d.client.ExchangeDeviceCode(ctx, code, verifier)
 	if err != nil {
 		return fmt.Errorf("token exchange failed: %w", err)
 	}

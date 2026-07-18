@@ -6,14 +6,18 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
 
+var challengeRe = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+
 // Simulates the browser leg: the flow opens a URL; we parse state and
 // redirect_uri out of it and hit the loopback callback like spoo.me would.
 func TestDeviceFlowReturnsCode(t *testing.T) {
+	challengeCh := make(chan string, 1)
 	flow := &DeviceFlow{
 		APIBase: "https://spoo.example",
 		Out:     io.Discard,
@@ -32,6 +36,14 @@ func TestDeviceFlowReturnsCode(t *testing.T) {
 				if !strings.HasPrefix(cb, "http://127.0.0.1:53682/callback") {
 					t.Errorf("redirect_uri = %q", cb)
 				}
+				if q.Get("code_challenge_method") != "S256" {
+					t.Errorf("code_challenge_method = %q, want S256", q.Get("code_challenge_method"))
+				}
+				challenge := q.Get("code_challenge")
+				if !challengeRe.MatchString(challenge) {
+					t.Errorf("code_challenge = %q, want 43 base64url chars", challenge)
+				}
+				challengeCh <- challenge
 				time.Sleep(50 * time.Millisecond) // let the server start
 				resp, err := http.Get(fmt.Sprintf("%s?code=thecode&state=%s", cb, q.Get("state")))
 				if err != nil {
@@ -46,12 +58,29 @@ func TestDeviceFlowReturnsCode(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	code, err := flow.Run(ctx)
+	code, verifier, err := flow.Run(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if code != "thecode" {
 		t.Fatalf("code = %q, want thecode", code)
+	}
+	if len(verifier) != 43 {
+		t.Fatalf("verifier length = %d, want 43", len(verifier))
+	}
+	if got := codeChallengeS256(verifier); got != <-challengeCh {
+		t.Fatalf("code_challenge on auth URL does not match S256(verifier): %q", got)
+	}
+}
+
+// RFC 7636 Appendix B test vector.
+func TestCodeChallengeS256Vector(t *testing.T) {
+	const (
+		verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+		want     = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+	)
+	if got := codeChallengeS256(verifier); got != want {
+		t.Fatalf("codeChallengeS256 = %q, want %q", got, want)
 	}
 }
 
@@ -72,7 +101,7 @@ func TestDeviceFlowRejectsStateMismatch(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if _, err := flow.Run(ctx); err == nil {
+	if _, _, err := flow.Run(ctx); err == nil {
 		t.Fatal("expected state-mismatch error, got nil")
 	}
 }
