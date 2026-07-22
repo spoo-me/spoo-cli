@@ -44,6 +44,39 @@ func TestDoSendsBearerToken(t *testing.T) {
 	}
 }
 
+func TestDoSendsClientHeader(t *testing.T) {
+	var gotClient string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotClient = r.Header.Get("X-Spoo-Client")
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, newTestStore(t, nil))
+	if err := c.do(context.Background(), http.MethodGet, "/auth/me", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if gotClient != "cli/dev" {
+		t.Fatalf("X-Spoo-Client = %q, want cli/dev", gotClient)
+	}
+}
+
+func TestClientHeaderRejectsMalformedVersion(t *testing.T) {
+	orig := Version
+	defer func() { Version = orig }()
+	for version, want := range map[string]string{
+		"1.2.3":                  "cli/1.2.3",
+		"0.2.0-SNAPSHOT-697203b": "cli", // >16 chars
+		"1.0+meta":               "cli", // invalid charset
+		"":                       "cli",
+	} {
+		Version = version
+		if got := clientHeader(); got != want {
+			t.Errorf("clientHeader() with Version=%q = %q, want %q", version, got, want)
+		}
+	}
+}
+
 func TestDoParsesErrorEnvelope(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
@@ -95,5 +128,48 @@ func TestDoRefreshesOn401AndRetries(t *testing.T) {
 	}
 	if got.AccessToken != "newAT" || got.RefreshToken != "newRT" {
 		t.Fatalf("store not updated after refresh: %+v", got)
+	}
+}
+
+func TestClientHeaderStrippedOnCrossOriginRedirect(t *testing.T) {
+	gotClient := "unset"
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotClient = r.Header.Get("X-Spoo-Client")
+		w.Write([]byte(`{}`))
+	}))
+	defer target.Close()
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+"/final", http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	c := New(redirector.URL, newTestStore(t, nil))
+	if err := c.do(context.Background(), http.MethodGet, "/start", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if gotClient != "" {
+		t.Fatalf("X-Spoo-Client forwarded cross-origin = %q, want empty", gotClient)
+	}
+}
+
+func TestClientHeaderKeptOnSameHostRedirect(t *testing.T) {
+	gotClient := "unset"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/start" {
+			http.Redirect(w, r, "/final", http.StatusFound)
+			return
+		}
+		gotClient = r.Header.Get("X-Spoo-Client")
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, newTestStore(t, nil))
+	if err := c.do(context.Background(), http.MethodGet, "/start", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if gotClient != "cli/dev" {
+		t.Fatalf("X-Spoo-Client after same-host redirect = %q, want cli/dev", gotClient)
 	}
 }

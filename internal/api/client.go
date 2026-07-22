@@ -10,11 +10,26 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/spoo-me/spoo-cli/internal/auth"
 )
+
+// Version is the CLI release, injected by goreleaser via ldflags.
+var Version = "dev"
+
+var versionRe = regexp.MustCompile(`^[A-Za-z0-9._-]{1,16}$`)
+
+// clientHeader identifies the CLI (and its version, when well-formed) to
+// the backend so API traffic can be attributed per client.
+func clientHeader() string {
+	if versionRe.MatchString(Version) {
+		return "cli/" + Version
+	}
+	return "cli"
+}
 
 type Client struct {
 	base  string
@@ -24,8 +39,20 @@ type Client struct {
 
 func New(base string, store *auth.Store) *Client {
 	return &Client{
-		base:  strings.TrimRight(base, "/"),
-		http:  &http.Client{Timeout: 30 * time.Second},
+		base: strings.TrimRight(base, "/"),
+		http: &http.Client{
+			Timeout: 30 * time.Second,
+			// Go forwards custom headers on redirects, including
+			// cross-origin ones. Attribution belongs to the spoo API
+			// only, so drop it whenever a redirect leaves the original
+			// host. Go itself strips Authorization on cross-domain hops.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if req.URL.Host != via[0].URL.Host {
+					req.Header.Del("X-Spoo-Client")
+				}
+				return nil
+			},
+		},
 		store: store,
 	}
 }
@@ -96,6 +123,7 @@ func (c *Client) send(ctx context.Context, method, path string, query url.Values
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "spoo-cli")
+	req.Header.Set("X-Spoo-Client", clientHeader())
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
