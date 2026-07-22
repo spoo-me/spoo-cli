@@ -39,8 +39,20 @@ type Client struct {
 
 func New(base string, store *auth.Store) *Client {
 	return &Client{
-		base:  strings.TrimRight(base, "/"),
-		http:  &http.Client{Timeout: 30 * time.Second},
+		base: strings.TrimRight(base, "/"),
+		http: &http.Client{
+			Timeout: 30 * time.Second,
+			// Go forwards custom headers on redirects, including
+			// cross-origin ones. Attribution belongs to the spoo API
+			// only, so drop it whenever a redirect leaves the original
+			// host. Go itself strips Authorization on cross-domain hops.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if req.URL.Host != via[0].URL.Host {
+					req.Header.Del("X-Spoo-Client")
+				}
+				return nil
+			},
+		},
 		store: store,
 	}
 }
