@@ -28,6 +28,7 @@ func (c *Client) Inspect(ctx context.Context, shortCode string) (*InspectResult,
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "spoo-cli")
+	req.Header.Set("X-Spoo-Client", clientHeader())
 	resp, err := noFollow.Do(req)
 	if err != nil {
 		return nil, err

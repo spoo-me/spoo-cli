@@ -44,6 +44,39 @@ func TestDoSendsBearerToken(t *testing.T) {
 	}
 }
 
+func TestDoSendsClientHeader(t *testing.T) {
+	var gotClient string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotClient = r.Header.Get("X-Spoo-Client")
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, newTestStore(t, nil))
+	if err := c.do(context.Background(), http.MethodGet, "/auth/me", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if gotClient != "cli/dev" {
+		t.Fatalf("X-Spoo-Client = %q, want cli/dev", gotClient)
+	}
+}
+
+func TestClientHeaderRejectsMalformedVersion(t *testing.T) {
+	orig := Version
+	defer func() { Version = orig }()
+	for version, want := range map[string]string{
+		"1.2.3":                  "cli/1.2.3",
+		"0.2.0-SNAPSHOT-697203b": "cli", // >16 chars
+		"1.0+meta":               "cli", // invalid charset
+		"":                       "cli",
+	} {
+		Version = version
+		if got := clientHeader(); got != want {
+			t.Errorf("clientHeader() with Version=%q = %q, want %q", version, got, want)
+		}
+	}
+}
+
 func TestDoParsesErrorEnvelope(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusConflict)
