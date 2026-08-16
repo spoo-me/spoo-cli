@@ -25,7 +25,7 @@ type linksListMsg struct {
 
 // openSwitcher pops the picker, fetching the link list on first use.
 func (m Model) openSwitcher() (tea.Model, tea.Cmd) {
-	if m.scope == "anon" {
+	if !m.loggedIn {
 		m.status = ui.Dim.Render("log in to switch links")
 		return m, nil
 	}
@@ -81,12 +81,14 @@ func (m Model) updateSwitcher(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		cands := m.switchCandidates()
-		target := "" // row 0 is "all links"
+		target := Target{Kind: KindAccount} // row 0 is "all links"
 		if m.switchSel > 0 {
 			if m.switchSel-1 >= len(cands) {
 				return m, nil
 			}
-			target = cands[m.switchSel-1].Alias
+			it := cands[m.switchSel-1]
+			// picked from your own list, so the id is already in hand
+			target = Target{Kind: KindOwnedLink, Alias: it.Alias, URLID: it.ID}
 		}
 		m.switchMode = false
 		m.switchBox.Blur()

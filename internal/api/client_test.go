@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -171,5 +172,41 @@ func TestClientHeaderKeptOnSameHostRedirect(t *testing.T) {
 	}
 	if gotClient != "cli/dev" {
 		t.Fatalf("X-Spoo-Client after same-host redirect = %q, want cli/dev", gotClient)
+	}
+}
+
+// a password-protected link answers 401 too, but that's about the link,
+// not the session — no token refresh, and an honest error instead of
+// "session expired".
+func TestDo401PasswordRequiredSkipsRefresh(t *testing.T) {
+	var refreshCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/auth/device/refresh" {
+			refreshCalls.Add(1)
+			w.Write([]byte(`{"access_token":"newAT","refresh_token":"newRT"}`))
+			return
+		}
+		w.Header().Set("X-Error-Code", "password_required")
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"Password required","code":"password_required"}`))
+	}))
+	defer srv.Close()
+
+	store := newTestStore(t, &auth.Credentials{Mode: auth.ModeDevice, AccessToken: "goodAT", RefreshToken: "goodRT"})
+	c := New(srv.URL, store)
+	err := c.do(context.Background(), http.MethodGet, "/api/v1/public/stats/secret", nil, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "password protected") {
+		t.Fatalf("err = %v, want a password-protected explanation", err)
+	}
+	if refreshCalls.Load() != 0 {
+		t.Fatalf("refresh called %d times, want 0", refreshCalls.Load())
+	}
+	// the healthy session must survive untouched
+	got, loadErr := store.Load()
+	if loadErr != nil {
+		t.Fatal(loadErr)
+	}
+	if got.AccessToken != "goodAT" || got.RefreshToken != "goodRT" {
+		t.Fatalf("tokens rotated pointlessly: %+v", got)
 	}
 }

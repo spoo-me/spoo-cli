@@ -14,6 +14,8 @@ import (
 	"github.com/spoo-me/spoo-cli/internal/config"
 )
 
+// statsBody is the standard stats wire; the stray "scope" key proves
+// the decoder tolerates it (the response wire still carries one).
 const statsBody = `{
 	"scope": "anon",
 	"summary": {"total_clicks": 100, "unique_clicks": 60, "first_click": "2026-05-01T10:00:00Z", "last_click": "2026-06-01T10:00:00Z", "avg_redirection_time": 0.12},
@@ -29,6 +31,25 @@ const statsBody = `{
 	}
 }`
 
+const publicStatsBody = `{"generation": "v2", "link": {"alias": "launch"}, "stats": ` + statsBody + `}`
+
+// pointDepsAtLoggedIn is pointDepsAt with stored credentials, so the
+// command under test sees a logged-in session.
+func pointDepsAtLoggedIn(t *testing.T, srvURL string) {
+	t.Helper()
+	keyring.MockInit()
+	_ = keyring.Delete("spoo-cli", "credentials")
+	store := auth.NewStore(t.TempDir())
+	if err := store.Save(auth.Credentials{Mode: auth.ModeAPIKey, APIKey: "spoo_k"}); err != nil {
+		t.Fatal(err)
+	}
+	orig := newDeps
+	newDeps = func() (*deps, error) {
+		return &deps{client: api.New(srvURL, store), store: store, cfg: config.Config{APIBase: srvURL}}, nil
+	}
+	t.Cleanup(func() { newDeps = orig })
+}
+
 func TestStatsAnonymousRequiresShortCode(t *testing.T) {
 	pointDepsAt(t, "http://unused.invalid")
 	root := NewRootCmd()
@@ -40,12 +61,15 @@ func TestStatsAnonymousRequiresShortCode(t *testing.T) {
 	}
 }
 
-func TestStatsRendersChartsForAnonCode(t *testing.T) {
-	var gotScope, gotCode string
+// anonymous + code goes straight to the public endpoint.
+func TestStatsAnonymousCodeUsesPublicEndpoint(t *testing.T) {
+	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotScope = r.URL.Query().Get("scope")
-		gotCode = r.URL.Query().Get("short_code")
-		w.Write([]byte(statsBody))
+		gotPath = r.URL.Path
+		if q := r.URL.Query(); q.Has("scope") || q.Has("group_by") {
+			t.Errorf("public request must send no scope/group_by: %v", q)
+		}
+		w.Write([]byte(publicStatsBody))
 	}))
 	defer srv.Close()
 	pointDepsAt(t, srv.URL)
@@ -58,8 +82,8 @@ func TestStatsRendersChartsForAnonCode(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if gotScope != "anon" || gotCode != "launch" {
-		t.Fatalf("scope=%q code=%q, want anon/launch", gotScope, gotCode)
+	if gotPath != "/api/v1/public/stats/launch" {
+		t.Fatalf("path = %q, want the public stats endpoint", gotPath)
 	}
 	text := out.String()
 	for _, want := range []string{"100 clicks", "60 unique", "Chrome", "Browsers", "Clicks over time"} {
@@ -69,25 +93,19 @@ func TestStatsRendersChartsForAnonCode(t *testing.T) {
 	}
 }
 
-func TestStatsUsesAllScopeWhenLoggedIn(t *testing.T) {
-	var gotScope string
+// logged in without a code reads the account surface — and never
+// sends the removed scope param.
+func TestStatsAccountWideWhenLoggedIn(t *testing.T) {
+	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotScope = r.URL.Query().Get("scope")
+		gotPath = r.URL.Path
+		if r.URL.Query().Has("scope") {
+			t.Errorf("scope param must not be sent: %v", r.URL.Query())
+		}
 		w.Write([]byte(statsBody))
 	}))
 	defer srv.Close()
-
-	keyring.MockInit()
-	_ = keyring.Delete("spoo-cli", "credentials")
-	store := auth.NewStore(t.TempDir())
-	if err := store.Save(auth.Credentials{Mode: auth.ModeAPIKey, APIKey: "spoo_k"}); err != nil {
-		t.Fatal(err)
-	}
-	orig := newDeps
-	newDeps = func() (*deps, error) {
-		return &deps{client: api.New(srv.URL, store), store: store, cfg: config.Config{APIBase: srv.URL}}, nil
-	}
-	t.Cleanup(func() { newDeps = orig })
+	pointDepsAtLoggedIn(t, srv.URL)
 
 	root := NewRootCmd()
 	var out bytes.Buffer
@@ -97,7 +115,138 @@ func TestStatsUsesAllScopeWhenLoggedIn(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if gotScope != "all" {
-		t.Fatalf("scope = %q, want all", gotScope)
+	if gotPath != "/api/v1/stats" {
+		t.Fatalf("path = %q, want /api/v1/stats", gotPath)
+	}
+}
+
+// logged in + code resolves the alias to a url id, then reads the
+// per-link endpoint.
+func TestStatsResolvesOwnedLinkToPerLinkEndpoint(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if strings.HasPrefix(r.URL.Path, "/api/v1/urls/") {
+			w.Write([]byte(`{"id":"65f0abc123","alias":"launch","long_url":"https://x.com","status":"ACTIVE"}`))
+			return
+		}
+		w.Write([]byte(statsBody))
+	}))
+	defer srv.Close()
+	pointDepsAtLoggedIn(t, srv.URL)
+
+	root := NewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"stats", "launch"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/api/v1/urls/127.0.0.1/launch", "/api/v1/stats/links/65f0abc123"}
+	if len(paths) != 2 || paths[0] != want[0] || paths[1] != want[1] {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+}
+
+// a code that doesn't resolve may still be someone else's public link,
+// so stats falls back to the public endpoint — but says so on stderr
+// instead of silently switching surfaces.
+func TestStatsFallsBackToPublicForForeignCode(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if strings.HasPrefix(r.URL.Path, "/api/v1/urls/") {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":"URL not found","code":"not_found"}`))
+			return
+		}
+		w.Write([]byte(publicStatsBody))
+	}))
+	defer srv.Close()
+	pointDepsAtLoggedIn(t, srv.URL)
+
+	root := NewRootCmd()
+	var out, errOut bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&errOut)
+	root.SetArgs([]string{"stats", "launch"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 || paths[1] != "/api/v1/public/stats/launch" {
+		t.Fatalf("paths = %v, want a public-stats fallback", paths)
+	}
+	notice := errOut.String()
+	if !strings.Contains(notice, "isn't one of your links") ||
+		!strings.Contains(notice, "public stats for 127.0.0.1/launch") {
+		t.Fatalf("stderr = %q, want an announced fallback", notice)
+	}
+}
+
+// --domain must reach the resolve path, replacing the API host.
+func TestStatsDomainFlagResolvesOnThatDomain(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if strings.HasPrefix(r.URL.Path, "/api/v1/urls/") {
+			w.Write([]byte(`{"id":"65f0abc123","alias":"promo","long_url":"https://x.com","status":"ACTIVE"}`))
+			return
+		}
+		w.Write([]byte(statsBody))
+	}))
+	defer srv.Close()
+	pointDepsAtLoggedIn(t, srv.URL)
+
+	root := NewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"stats", "promo", "--domain", "links.example.com"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/api/v1/urls/links.example.com/promo", "/api/v1/stats/links/65f0abc123"}
+	if len(paths) != 2 || paths[0] != want[0] || paths[1] != want[1] {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+}
+
+// with --domain there is no public surface to fall back to (the public
+// endpoint serves only the default domain), so a 404 must be an error —
+// never a stranger's default-domain stats under the same alias.
+func TestStatsDomainNotFoundErrorsInsteadOfFallingBack(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"URL not found","code":"not_found"}`))
+	}))
+	defer srv.Close()
+	pointDepsAtLoggedIn(t, srv.URL)
+
+	root := NewRootCmd()
+	root.SetOut(new(bytes.Buffer))
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"stats", "promo", "--domain", "links.example.com"})
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not one of your links") {
+		t.Fatalf("err = %v, want an ownership explanation", err)
+	}
+	if len(paths) != 1 || paths[0] != "/api/v1/urls/links.example.com/promo" {
+		t.Fatalf("paths = %v, want the resolve call only (no public fallback)", paths)
+	}
+}
+
+// anonymous + --domain has no surface at all: resolution needs login and
+// the public endpoint serves only the default domain.
+func TestStatsDomainRequiresLogin(t *testing.T) {
+	pointDepsAt(t, "http://unused.invalid")
+	root := NewRootCmd()
+	root.SetOut(new(bytes.Buffer))
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"stats", "promo", "--domain", "links.example.com"})
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "--domain requires login") {
+		t.Fatalf("err = %v, want a login requirement", err)
 	}
 }

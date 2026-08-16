@@ -26,6 +26,24 @@ var defaultWindow = timeWindow{span: api.MaxRangeDays * 24 * time.Hour, label: "
 
 type panelDef struct{ key, title string }
 
+// TargetKind says which stats surface the dashboard reads from.
+type TargetKind int
+
+const (
+	KindAccount    TargetKind = iota // GET /v1/stats — all your links
+	KindOwnedLink                    // GET /v1/stats/links/{id} — one link you own
+	KindPublicLink                   // GET /v1/public/stats/{code} — no auth, fixed dimensions
+)
+
+// Target is what the dashboard is pointed at. Alias is empty for the
+// account view; URLID is set only for owned links (resolved by the
+// caller, or picked with its id from the link switcher).
+type Target struct {
+	Kind  TargetKind
+	Alias string
+	URLID string
+}
+
 type statsLoadedMsg struct {
 	res  *api.StatsResponse
 	prev *api.StatsResponse // previous window, for period-over-period deltas
@@ -48,10 +66,10 @@ type filterEntry struct {
 // period deltas, a dual-series time chart, focusable breakdown panels
 // with server-side drill-down, window paging, and a focus mode.
 type Model struct {
-	client *api.Client
-	target string // short code, or "" for account-wide
-	scope  string // all | anon
-	tz     string
+	client   *api.Client
+	target   Target
+	loggedIn bool // gates the link switcher and export
+	tz       string
 
 	win      timeWindow
 	offset   int // how many windows back in time ('[' / ']')
@@ -89,7 +107,7 @@ type Model struct {
 	height int
 }
 
-func New(client *api.Client, target, scope, tz string) Model {
+func New(client *api.Client, target Target, loggedIn bool, tz string) Model {
 	rangeBox := textinput.New()
 	rangeBox.Placeholder = "type a range…"
 	rangeBox.SetWidth(36) // fits "2026-01-01 to 2026-02-15" with room; keeps the cheat-sheet column still
@@ -99,7 +117,7 @@ func New(client *api.Client, target, scope, tz string) Model {
 	return Model{
 		client:    client,
 		target:    target,
-		scope:     scope,
+		loggedIn:  loggedIn,
 		tz:        tz,
 		win:       defaultWindow,
 		rangeBox:  rangeBox,
@@ -119,7 +137,7 @@ func New(client *api.Client, target, scope, tz string) Model {
 // wide gets the drillable top-links leaderboard first; a single link
 // gets the weekday distribution instead.
 func (m Model) panels() []panelDef {
-	if m.target == "" {
+	if m.target.Kind == KindAccount {
 		return []panelDef{
 			{"short_code", "top links"},
 			{"browser", "browsers"},

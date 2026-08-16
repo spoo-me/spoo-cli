@@ -18,7 +18,6 @@ import (
 
 func testStatsResponse() *api.StatsResponse {
 	return &api.StatsResponse{
-		Scope:   "all",
 		Summary: api.StatsSummary{TotalClicks: 100, UniqueClicks: 40, AvgRedirectionTime: 88},
 		TimeRange: api.StatsTimeRange{
 			StartDate: "2026-03-12T00:00:00Z", EndDate: "2026-06-10T00:00:00Z",
@@ -44,7 +43,7 @@ func newStatsModel(t *testing.T, srvURL string) Model {
 	t.Helper()
 	keyring.MockInit()
 	client := api.New(srvURL, auth.NewStore(t.TempDir()))
-	m := New(client, "", "all", "")
+	m := New(client, Target{}, true, "")
 	next, _ := m.Update(statsLoadedMsg{res: testStatsResponse()})
 	return next.(Model)
 }
@@ -384,15 +383,16 @@ func TestMouseClickAndWheel(t *testing.T) {
 	}
 }
 
-// g opens the link picker; choosing a link re-targets the dashboard.
+// g opens the link picker; choosing a link re-targets the dashboard
+// at the per-link endpoint, using the id the list already carries.
 func TestLinkSwitcher(t *testing.T) {
-	var gotCode string
+	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/urls") {
-			w.Write([]byte(`{"items":[{"alias":"launch","long_url":"https://a.com","total_clicks":60},{"alias":"promo","long_url":"https://b.com","total_clicks":40}],"page":1,"pageSize":100,"total":2}`))
+			w.Write([]byte(`{"items":[{"id":"id-launch","alias":"launch","long_url":"https://a.com","total_clicks":60},{"id":"id-promo","alias":"promo","long_url":"https://b.com","total_clicks":40}],"page":1,"pageSize":100,"total":2}`))
 			return
 		}
-		gotCode = r.URL.Query().Get("short_code")
+		gotPath = r.URL.Path
 		w.Write([]byte(`{"scope":"all","summary":{"total_clicks":1},"metrics":{}}`))
 	}))
 	defer srv.Close()
@@ -417,19 +417,71 @@ func TestLinkSwitcher(t *testing.T) {
 	}
 	m, _ = statsKey(t, m, "down")
 	m, cmd = statsKey(t, m, "enter")
-	if m.switchMode || m.target != "promo" || cmd == nil {
-		t.Fatalf("switch failed: mode=%v target=%q", m.switchMode, m.target)
+	want := Target{Kind: KindOwnedLink, Alias: "promo", URLID: "id-promo"}
+	if m.switchMode || m.target != want || cmd == nil {
+		t.Fatalf("switch failed: mode=%v target=%+v", m.switchMode, m.target)
 	}
 	cmd()
-	if gotCode != "promo" {
-		t.Fatalf("short_code param = %q, want promo", gotCode)
+	if gotPath != "/api/v1/stats/links/id-promo" {
+		t.Fatalf("path = %q, want the per-link endpoint", gotPath)
 	}
 
 	// esc just closes without switching
 	m, _ = statsKey(t, m, "g")
 	m, _ = statsKey(t, m, "esc")
-	if m.switchMode || m.target != "promo" {
+	if m.switchMode || m.target != want {
 		t.Fatal("esc should close the picker and keep the target")
+	}
+}
+
+// a public-link view reads only the public endpoint — which takes no
+// group_by and no filters — so drill-down, export, and the link
+// switcher are all gated off.
+func TestPublicViewIsReadOnly(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		if q := r.URL.Query(); q.Has("scope") || q.Has("group_by") {
+			t.Errorf("public request must send no scope/group_by: %v", q)
+		}
+		w.Write([]byte(`{"generation":"v2","link":{"alias":"launch"},"stats":{"summary":{"total_clicks":5},"metrics":{"clicks_by_browser":[{"browser":"Chrome","clicks":5.0}]}}}`))
+	}))
+	defer srv.Close()
+
+	keyring.MockInit()
+	client := api.New(srv.URL, auth.NewStore(t.TempDir()))
+	m := New(client, Target{Kind: KindPublicLink, Alias: "launch"}, false, "")
+	for _, msg := range drainCmd(m.Init()) {
+		next, _ := m.Update(msg)
+		m = next.(Model)
+	}
+	if gotPath != "/api/v1/public/stats/launch" {
+		t.Fatalf("path = %q, want the public stats endpoint", gotPath)
+	}
+	if m.res == nil || m.res.Summary.TotalClicks != 5 {
+		t.Fatalf("envelope not unwrapped: %+v", m.res)
+	}
+	if !strings.Contains(m.View().Content, "(public)") {
+		t.Fatal("header should label the public view")
+	}
+
+	// drill-down is a server-side filter the endpoint can't serve
+	m, _ = statsKey(t, m, "tab") // focus panel 1 (browsers)
+	m, cmd := statsKey(t, m, "enter")
+	if len(m.filters) != 0 || cmd != nil {
+		t.Fatalf("public drill must be a no-op: filters=%v cmd=%v", m.filters, cmd)
+	}
+
+	// export is an owner surface now
+	m, _ = statsKey(t, m, "e")
+	if m.exportBox.open {
+		t.Fatal("public view must not open the export dialog")
+	}
+
+	// switching links needs a login
+	m, _ = statsKey(t, m, "g")
+	if m.switchMode {
+		t.Fatal("public view must not open the link switcher")
 	}
 }
 
@@ -529,6 +581,26 @@ func TestExportModal(t *testing.T) {
 	m, _ = statsKey(t, m, "esc")
 	if m.exportBox.open {
 		t.Fatal("esc should close the dialog")
+	}
+}
+
+// an owned-link view exports through the per-link endpoint.
+func TestExportRoutesOwnedLinkToPerLinkEndpoint(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write([]byte(`{}`))
+	}))
+	defer srv.Close()
+
+	m := newStatsModel(t, srv.URL)
+	m.target = Target{Kind: KindOwnedLink, Alias: "launch", URLID: "id-launch"}
+	cmd := m.export(exportRequest{path: filepath.Join(t.TempDir(), "x.json"), format: "json"})
+	if done, ok := cmd().(exportDoneMsg); !ok || done.err != nil {
+		t.Fatalf("export failed: %+v", done)
+	}
+	if gotPath != "/api/v1/export/links/id-launch" {
+		t.Fatalf("path = %q, want the per-link export endpoint", gotPath)
 	}
 }
 

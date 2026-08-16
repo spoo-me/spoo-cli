@@ -310,9 +310,11 @@ func TestDetailViewShowsFullFields(t *testing.T) {
 // each move only re-arms the debounce, and stale ticks are dropped.
 func TestStatsDebounceDropsStaleTicks(t *testing.T) {
 	var statsCalls int
+	var statsPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/v1/stats") {
 			statsCalls++
+			statsPath = r.URL.Path
 		}
 		w.Write([]byte(`{"scope":"all","summary":{"total_clicks":1},"metrics":{}}`))
 	}))
@@ -354,6 +356,9 @@ func TestStatsDebounceDropsStaleTicks(t *testing.T) {
 	sm, ok := msg.(statsMsg)
 	if !ok || sm.alias != "third" {
 		t.Fatalf("fetched %+v, want stats for third (the rested row)", msg)
+	}
+	if statsPath != "/api/v1/stats/links/id-third" {
+		t.Fatalf("path = %q, want the per-link endpoint", statsPath)
 	}
 }
 
