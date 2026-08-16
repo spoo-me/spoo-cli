@@ -83,6 +83,24 @@ func (c *Client) ListURLs(ctx context.Context, opts ListURLsOptions) (*URLPage, 
 	return &out, nil
 }
 
+// ResolveAlias looks up an owned link by alias via GET
+// /api/v1/urls/{domain}/{alias}, mainly to obtain its url id for the
+// per-link stats and export endpoints. The domain is the API base
+// URL's hostname, which covers spoo.me links. Unknown and foreign
+// aliases both answer 404 (no ownership oracle).
+func (c *Client) ResolveAlias(ctx context.Context, alias string) (*URLItem, error) {
+	base, err := url.Parse(c.base)
+	if err != nil {
+		return nil, err
+	}
+	path := "/api/v1/urls/" + url.PathEscape(base.Hostname()) + "/" + url.PathEscape(alias)
+	var out URLItem
+	if err := c.do(ctx, http.MethodGet, path, nil, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // UpdatedURL mirrors UpdateUrlResponse — unlike the shorten response it
 // carries no short_url, and timestamps are Unix seconds.
 type UpdatedURL struct {

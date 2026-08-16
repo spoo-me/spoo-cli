@@ -26,15 +26,15 @@ func (m Model) window() (start, end time.Time) {
 }
 
 // query builds the stats request for the current dashboard state.
+// The public endpoint reads only the range and timezone from it — no
+// group_by (it answers with every dimension at once) and no filters.
 func (m Model) query() api.StatsQuery {
 	start, end := m.window()
 	groupBy := []string{"time", "browser", "os", "country", "city", "referrer"}
-	if m.target == "" {
+	if m.target.Kind == KindAccount {
 		groupBy = append(groupBy, "short_code")
 	}
 	q := api.StatsQuery{
-		Scope:     m.scope,
-		ShortCode: m.target,
 		StartDate: start.Format(time.RFC3339),
 		Timezone:  m.tz,
 		GroupBy:   groupBy,
@@ -49,10 +49,21 @@ func (m Model) query() api.StatsQuery {
 	return q
 }
 
+// getStats routes a query to the target's endpoint.
+func (m Model) getStats(ctx context.Context, q api.StatsQuery) (*api.StatsResponse, error) {
+	switch m.target.Kind {
+	case KindOwnedLink:
+		return m.client.LinkStats(ctx, m.target.URLID, q)
+	case KindPublicLink:
+		return m.client.PublicStats(ctx, m.target.Alias, q.StartDate, q.EndDate, q.Timezone)
+	default:
+		return m.client.Stats(ctx, q)
+	}
+}
+
 // fetch loads the current window and, for the overview deltas, the
 // window before it (summary only) — one command, one message.
 func (m Model) fetch() tea.Cmd {
-	client := m.client
 	q := m.query()
 	prevQ := q
 	prevQ.GroupBy = []string{"time"}
@@ -61,20 +72,25 @@ func (m Model) fetch() tea.Cmd {
 	prevQ.EndDate = start.Format(time.RFC3339)
 
 	return func() tea.Msg {
-		res, err := client.Stats(context.Background(), q)
+		res, err := m.getStats(context.Background(), q)
 		var prev *api.StatsResponse
 		if err == nil {
-			prev, _ = client.Stats(context.Background(), prevQ) // best-effort
+			prev, _ = m.getStats(context.Background(), prevQ) // best-effort
 		}
 		return statsLoadedMsg{res: res, prev: prev, err: err}
 	}
 }
 
 // openExport pops the export dialog with a dated default filename.
+// Export is an owner surface — the public view has nothing to offer.
 func (m Model) openExport() (tea.Model, tea.Cmd) {
+	if m.target.Kind == KindPublicLink {
+		m.status = ui.Dim.Render("export needs a login — run `spoo auth login`")
+		return m, nil
+	}
 	subject := "stats-all"
-	if m.target != "" {
-		subject = "stats-" + m.target
+	if m.target.Alias != "" {
+		subject = "stats-" + m.target.Alias
 	}
 	var cmd tea.Cmd
 	m.exportBox, cmd = m.exportBox.show(defaultExportName(subject, time.Now().Format("2006-01-02")))
@@ -85,9 +101,16 @@ func (m Model) openExport() (tea.Model, tea.Cmd) {
 // writes it where the dialog pointed.
 func (m Model) export(req exportRequest) tea.Cmd {
 	client := m.client
+	target := m.target
 	q := m.query()
 	return func() tea.Msg {
-		_, data, err := client.Export(context.Background(), q, req.format)
+		var data []byte
+		var err error
+		if target.Kind == KindOwnedLink {
+			_, data, err = client.ExportLink(context.Background(), target.URLID, q, req.format)
+		} else {
+			_, data, err = client.Export(context.Background(), q, req.format)
+		}
 		if err == nil {
 			err = os.WriteFile(req.path, data, 0o644)
 		}

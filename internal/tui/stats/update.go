@@ -294,7 +294,12 @@ func (m Model) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // drill adds a server-side filter for the selected row of panel idx.
+// The public endpoint takes no filters, so the public view is read-only.
 func (m Model) drill(idx, topN int) (tea.Model, tea.Cmd) {
+	if m.target.Kind == KindPublicLink {
+		m.status = ui.Dim.Render("public stats — log in to drill down")
+		return m, nil
+	}
 	dim := m.panels()[idx].key
 	if dim == "weekday" {
 		m.status = ui.Dim.Render("weekdays are computed locally — nothing to drill into")

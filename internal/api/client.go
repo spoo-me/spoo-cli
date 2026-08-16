@@ -72,6 +72,13 @@ func (e *APIError) Error() string {
 	return e.Message
 }
 
+// IsNotFound reports whether err is an API 404 — for the resolve-first
+// endpoints that means "no such link, or not yours".
+func IsNotFound(err error) bool {
+	var apiErr *APIError
+	return errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound
+}
+
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, body, out any) error {
 	resp, err := c.request(ctx, method, path, query, body)
 	if err != nil {

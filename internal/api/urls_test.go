@@ -37,6 +37,43 @@ func TestListURLsBuildsQueryAndFilter(t *testing.T) {
 	}
 }
 
+func TestResolveAliasUsesAPIHostAndEscapes(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.Write([]byte(`{"id":"65f0abc123","alias":"🚀","long_url":"https://x.com","status":"ACTIVE"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, newTestStore(t, nil))
+	u, err := c.ResolveAlias(context.Background(), "🚀")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// httptest serves on 127.0.0.1, and the emoji alias must arrive
+	// percent-encoded
+	if gotPath != "/api/v1/urls/127.0.0.1/%F0%9F%9A%80" {
+		t.Fatalf("path = %q", gotPath)
+	}
+	if u.ID != "65f0abc123" {
+		t.Fatalf("id = %q", u.ID)
+	}
+}
+
+func TestResolveAliasNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"URL not found","code":"not_found"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, newTestStore(t, nil))
+	_, err := c.ResolveAlias(context.Background(), "nope")
+	if !IsNotFound(err) {
+		t.Fatalf("err = %v, want IsNotFound", err)
+	}
+}
+
 func TestUpdateURLSendsPatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPatch || r.URL.Path != "/api/v1/urls/abc123" {

@@ -90,10 +90,13 @@ func (m Model) View() tea.View {
 
 func (m Model) headerLine() string {
 	target := "all links"
-	if m.target != "" {
-		target = m.target
+	if m.target.Alias != "" {
+		target = m.target.Alias
 	}
 	h := ui.Title.Render("✦ spoo stats") + ui.Dim.Render("  ·  ") + target
+	if m.target.Kind == KindPublicLink {
+		h += ui.Dim.Render(" (public)")
+	}
 	if m.res != nil && m.res.TimeRange.StartDate != "" {
 		h += ui.Dim.Render("  ·  " + kit.ISODate(m.res.TimeRange.StartDate) + " → " + kit.ISODate(m.res.TimeRange.EndDate))
 	} else {

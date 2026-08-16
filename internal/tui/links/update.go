@@ -64,7 +64,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if _, ok := m.stats[it.Alias]; ok {
 			return m, nil
 		}
-		return m, m.fetchStats(it.Alias)
+		return m, m.fetchStats(it)
 
 	case statsMsg:
 		m.stats[msg.alias] = statsEntry{res: msg.res, err: msg.err}
@@ -318,14 +318,13 @@ func (m *Model) scheduleStats() tea.Cmd {
 	})
 }
 
-func (m Model) fetchStats(alias string) tea.Cmd {
+func (m Model) fetchStats(it *api.URLItem) tea.Cmd {
 	client := m.client
+	id, alias := it.ID, it.Alias
 	return func() tea.Msg {
 		// the endpoint defaults to a 7-day window; ask for the maximum
 		from := time.Now().UTC().AddDate(0, 0, -api.MaxRangeDays).Format(time.RFC3339)
-		res, err := client.Stats(context.Background(), api.StatsQuery{
-			Scope:     "all",
-			ShortCode: alias,
+		res, err := client.LinkStats(context.Background(), id, api.StatsQuery{
 			StartDate: from,
 			GroupBy:   []string{"time", "browser", "os", "country", "referrer"},
 		})

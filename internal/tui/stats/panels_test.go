@@ -22,9 +22,8 @@ var ansiRe = regexp.MustCompile("\x1b\\[[0-9;]*m")
 func TestPanelRowsAligned(t *testing.T) {
 	keyring.MockInit()
 	client := api.New("http://x", auth.NewStore(t.TempDir()))
-	m := New(client, "", "all", "")
+	m := New(client, Target{}, true, "")
 	resp := &api.StatsResponse{
-		Scope:   "all",
 		Summary: api.StatsSummary{TotalClicks: 287558},
 		Metrics: map[string][]map[string]any{
 			"clicks_by_browser": {
