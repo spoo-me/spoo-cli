@@ -85,15 +85,19 @@ func (c *Client) ListURLs(ctx context.Context, opts ListURLsOptions) (*URLPage, 
 
 // ResolveAlias looks up an owned link by alias via GET
 // /api/v1/urls/{domain}/{alias}, mainly to obtain its url id for the
-// per-link stats and export endpoints. The domain is the API base
-// URL's hostname, which covers spoo.me links. Unknown and foreign
-// aliases both answer 404 (no ownership oracle).
-func (c *Client) ResolveAlias(ctx context.Context, alias string) (*URLItem, error) {
-	base, err := url.Parse(c.base)
-	if err != nil {
-		return nil, err
+// per-link stats and export endpoints. An empty domain defaults to the
+// API base URL's hostname, which covers spoo.me links; pass one of the
+// user's custom domains to resolve links living there. Unknown and
+// foreign aliases both answer 404 (no ownership oracle).
+func (c *Client) ResolveAlias(ctx context.Context, alias, domain string) (*URLItem, error) {
+	if domain == "" {
+		base, err := url.Parse(c.base)
+		if err != nil {
+			return nil, err
+		}
+		domain = base.Hostname()
 	}
-	path := "/api/v1/urls/" + url.PathEscape(base.Hostname()) + "/" + url.PathEscape(alias)
+	path := "/api/v1/urls/" + url.PathEscape(domain) + "/" + url.PathEscape(alias)
 	var out URLItem
 	if err := c.do(ctx, http.MethodGet, path, nil, nil, &out); err != nil {
 		return nil, err

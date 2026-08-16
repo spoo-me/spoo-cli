@@ -297,7 +297,7 @@ func (m Model) updateDashboard(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // The public endpoint takes no filters, so the public view is read-only.
 func (m Model) drill(idx, topN int) (tea.Model, tea.Cmd) {
 	if m.target.Kind == KindPublicLink {
-		m.status = ui.Dim.Render("public stats — log in to drill down")
+		m.status = ui.Dim.Render("filters aren't available for public stats")
 		return m, nil
 	}
 	dim := m.panels()[idx].key

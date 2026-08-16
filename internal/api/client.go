@@ -99,14 +99,24 @@ func (c *Client) request(ctx context.Context, method, path string, query url.Val
 	if err != nil {
 		return nil, err
 	}
-	if resp.StatusCode == http.StatusUnauthorized && creds != nil &&
-		creds.Mode == auth.ModeDevice && creds.RefreshToken != "" {
-		resp.Body.Close()
-		if creds, err = c.refreshTokens(ctx, creds); err != nil {
-			return nil, err
+	if resp.StatusCode == http.StatusUnauthorized {
+		// The public stats endpoint answers 401 for password-protected
+		// links. That is a property of the link, not of the session, so
+		// refreshing tokens can't help — and the CLI doesn't supply link
+		// passwords, so say so instead of blaming the login.
+		switch resp.Header.Get("X-Error-Code") {
+		case "password_required", "invalid_password":
+			resp.Body.Close()
+			return nil, errors.New("this link's stats are password protected")
 		}
-		if resp, err = c.send(ctx, method, path, query, body, creds); err != nil {
-			return nil, err
+		if creds != nil && creds.Mode == auth.ModeDevice && creds.RefreshToken != "" {
+			resp.Body.Close()
+			if creds, err = c.refreshTokens(ctx, creds); err != nil {
+				return nil, err
+			}
+			if resp, err = c.send(ctx, method, path, query, body, creds); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return resp, nil

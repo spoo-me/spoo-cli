@@ -46,7 +46,7 @@ func TestResolveAliasUsesAPIHostAndEscapes(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, newTestStore(t, nil))
-	u, err := c.ResolveAlias(context.Background(), "🚀")
+	u, err := c.ResolveAlias(context.Background(), "🚀", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,9 +68,28 @@ func TestResolveAliasNotFound(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, newTestStore(t, nil))
-	_, err := c.ResolveAlias(context.Background(), "nope")
+	_, err := c.ResolveAlias(context.Background(), "nope", "")
 	if !IsNotFound(err) {
 		t.Fatalf("err = %v, want IsNotFound", err)
+	}
+}
+
+// a custom domain replaces the API host in the resolve path, so links
+// on the user's own domains resolve to their real url ids.
+func TestResolveAliasCustomDomain(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.EscapedPath()
+		w.Write([]byte(`{"id":"65f0abc123","alias":"promo","long_url":"https://x.com","status":"ACTIVE"}`))
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, newTestStore(t, nil))
+	if _, err := c.ResolveAlias(context.Background(), "promo", "links.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/api/v1/urls/links.example.com/promo" {
+		t.Fatalf("path = %q, want the custom domain in the path", gotPath)
 	}
 }
 

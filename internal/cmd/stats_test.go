@@ -150,7 +150,8 @@ func TestStatsResolvesOwnedLinkToPerLinkEndpoint(t *testing.T) {
 }
 
 // a code that doesn't resolve may still be someone else's public link,
-// so stats falls back to the public endpoint.
+// so stats falls back to the public endpoint — but says so on stderr
+// instead of silently switching surfaces.
 func TestStatsFallsBackToPublicForForeignCode(t *testing.T) {
 	var paths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -166,14 +167,86 @@ func TestStatsFallsBackToPublicForForeignCode(t *testing.T) {
 	pointDepsAtLoggedIn(t, srv.URL)
 
 	root := NewRootCmd()
-	var out bytes.Buffer
+	var out, errOut bytes.Buffer
 	root.SetOut(&out)
-	root.SetErr(&out)
+	root.SetErr(&errOut)
 	root.SetArgs([]string{"stats", "launch"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
 	if len(paths) != 2 || paths[1] != "/api/v1/public/stats/launch" {
 		t.Fatalf("paths = %v, want a public-stats fallback", paths)
+	}
+	notice := errOut.String()
+	if !strings.Contains(notice, "isn't one of your links") ||
+		!strings.Contains(notice, "public stats for 127.0.0.1/launch") {
+		t.Fatalf("stderr = %q, want an announced fallback", notice)
+	}
+}
+
+// --domain must reach the resolve path, replacing the API host.
+func TestStatsDomainFlagResolvesOnThatDomain(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if strings.HasPrefix(r.URL.Path, "/api/v1/urls/") {
+			w.Write([]byte(`{"id":"65f0abc123","alias":"promo","long_url":"https://x.com","status":"ACTIVE"}`))
+			return
+		}
+		w.Write([]byte(statsBody))
+	}))
+	defer srv.Close()
+	pointDepsAtLoggedIn(t, srv.URL)
+
+	root := NewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"stats", "promo", "--domain", "links.example.com"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/api/v1/urls/links.example.com/promo", "/api/v1/stats/links/65f0abc123"}
+	if len(paths) != 2 || paths[0] != want[0] || paths[1] != want[1] {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+}
+
+// with --domain there is no public surface to fall back to (the public
+// endpoint serves only the default domain), so a 404 must be an error —
+// never a stranger's default-domain stats under the same alias.
+func TestStatsDomainNotFoundErrorsInsteadOfFallingBack(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"URL not found","code":"not_found"}`))
+	}))
+	defer srv.Close()
+	pointDepsAtLoggedIn(t, srv.URL)
+
+	root := NewRootCmd()
+	root.SetOut(new(bytes.Buffer))
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"stats", "promo", "--domain", "links.example.com"})
+	err := root.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not one of your links") {
+		t.Fatalf("err = %v, want an ownership explanation", err)
+	}
+	if len(paths) != 1 || paths[0] != "/api/v1/urls/links.example.com/promo" {
+		t.Fatalf("paths = %v, want the resolve call only (no public fallback)", paths)
+	}
+}
+
+// anonymous + --domain has no surface at all: resolution needs login and
+// the public endpoint serves only the default domain.
+func TestStatsDomainRequiresLogin(t *testing.T) {
+	pointDepsAt(t, "http://unused.invalid")
+	root := NewRootCmd()
+	root.SetOut(new(bytes.Buffer))
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"stats", "promo", "--domain", "links.example.com"})
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "--domain requires login") {
+		t.Fatalf("err = %v, want a login requirement", err)
 	}
 }

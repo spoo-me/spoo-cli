@@ -85,7 +85,7 @@ func (m Model) fetch() tea.Cmd {
 // Export is an owner surface — the public view has nothing to offer.
 func (m Model) openExport() (tea.Model, tea.Cmd) {
 	if m.target.Kind == KindPublicLink {
-		m.status = ui.Dim.Render("export needs a login — run `spoo auth login`")
+		m.status = ui.Dim.Render("export is available only for links you own")
 		return m, nil
 	}
 	subject := "stats-all"

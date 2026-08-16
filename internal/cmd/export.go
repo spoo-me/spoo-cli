@@ -13,7 +13,7 @@ import (
 )
 
 func newExportCmd() *cobra.Command {
-	var format, output, from, to string
+	var format, output, from, to, domain string
 	cmd := &cobra.Command{
 		Use:   "export [short-code]",
 		Short: "Export click analytics to a file",
@@ -46,9 +46,13 @@ workbook with one sheet per dimension.`,
 			var name string
 			var data []byte
 			if len(args) == 1 {
-				u, err := d.client.ResolveAlias(cmd.Context(), args[0])
+				u, err := d.client.ResolveAlias(cmd.Context(), args[0], domain)
 				if api.IsNotFound(err) {
-					return fmt.Errorf("%s is not one of your links — export covers only links you own", args[0])
+					where := args[0]
+					if domain != "" {
+						where += " on " + domain
+					}
+					return fmt.Errorf("%s is not one of your links — export covers only links you own", where)
 				}
 				if err != nil {
 					return err
@@ -79,6 +83,8 @@ workbook with one sheet per dimension.`,
 	cmd.Flags().StringVarP(&output, "output", "o", "", "output file (default: server-suggested name; - for stdout)")
 	cmd.Flags().StringVar(&from, "from", "", "start date (ISO 8601)")
 	cmd.Flags().StringVar(&to, "to", "", "end date (ISO 8601)")
+	cmd.Flags().StringVar(&domain, "domain", "", "the link is on one of your custom domains")
 	fixed(cmd, "format", "json", "csv", "xlsx", "xml")
+	flagComp(cmd, "domain", completeDomain)
 	return cmd
 }

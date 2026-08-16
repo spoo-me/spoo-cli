@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -16,16 +17,24 @@ import (
 )
 
 // resolveTarget maps a short code and login state onto a stats surface.
-// Logged in with a code, the alias resolves to an owned link's url id;
-// a 404 means the link isn't yours (or doesn't exist), so it falls back
-// to the public endpoint, which answers for anyone's public link.
-func resolveTarget(ctx context.Context, client *api.Client, code string, loggedIn bool) (stats.Target, error) {
+// Logged in with a code, the alias resolves to an owned link's url id on
+// the given domain (empty means the system default). On a 404 with
+// --domain set there is nowhere to fall back to — the public endpoint
+// serves only default-domain links — so it errors instead of silently
+// showing a different link's stats. Without --domain the code may still
+// be someone else's public default-domain link, so it falls back to the
+// public endpoint, announcing the switch on errOut.
+func resolveTarget(ctx context.Context, client *api.Client, code, domain, defaultDomain string, loggedIn bool, errOut io.Writer) (stats.Target, error) {
 	switch {
 	case code == "":
 		return stats.Target{Kind: stats.KindAccount}, nil
 	case loggedIn:
-		u, err := client.ResolveAlias(ctx, code)
+		u, err := client.ResolveAlias(ctx, code, domain)
 		if api.IsNotFound(err) {
+			if domain != "" {
+				return stats.Target{}, fmt.Errorf("%s on %s is not one of your links — public stats cover only %s links", code, domain, defaultDomain)
+			}
+			fmt.Fprintf(errOut, "note: %s isn't one of your links — showing public stats for %s/%s\n", code, defaultDomain, code)
 			return stats.Target{Kind: stats.KindPublicLink, Alias: code}, nil
 		}
 		if err != nil {
@@ -38,7 +47,7 @@ func resolveTarget(ctx context.Context, client *api.Client, code string, loggedI
 }
 
 func newStatsCmd() *cobra.Command {
-	var from, to, tz string
+	var from, to, tz, domain string
 	var plain bool
 	cmd := &cobra.Command{
 		Use:   "stats [short-code]",
@@ -75,7 +84,11 @@ With a short code, shows that link — public stats work without login.`,
 			if !loggedIn && code == "" {
 				return fmt.Errorf("not logged in — pass a short code for public stats, or run `spoo auth login`")
 			}
-			target, err := resolveTarget(cmd.Context(), d.client, code, loggedIn)
+			defaultDomain := apiHost(d.cfg.APIBase)
+			if domain != "" && !loggedIn {
+				return fmt.Errorf("--domain requires login — public stats cover only %s links", defaultDomain)
+			}
+			target, err := resolveTarget(cmd.Context(), d.client, code, domain, defaultDomain, loggedIn, cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
@@ -132,5 +145,7 @@ With a short code, shows that link — public stats work without login.`,
 	cmd.Flags().StringVar(&to, "to", "", "end date, ISO 8601 (static report; default: now)")
 	cmd.Flags().StringVar(&tz, "tz", "", "IANA timezone for time buckets (default UTC)")
 	cmd.Flags().BoolVar(&plain, "plain", false, "print the static report instead of the dashboard")
+	cmd.Flags().StringVar(&domain, "domain", "", "the link is on one of your custom domains")
+	flagComp(cmd, "domain", completeDomain)
 	return cmd
 }

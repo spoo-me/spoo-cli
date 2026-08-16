@@ -94,3 +94,31 @@ func TestExportForeignCodeErrors(t *testing.T) {
 		t.Fatalf("err = %v, want an ownership explanation", err)
 	}
 }
+
+// --domain must reach the resolve path, replacing the API host.
+func TestExportDomainFlagResolvesOnThatDomain(t *testing.T) {
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if strings.HasPrefix(r.URL.Path, "/api/v1/urls/") {
+			w.Write([]byte(`{"id":"65f0abc123","alias":"promo","long_url":"https://x.com","status":"ACTIVE"}`))
+			return
+		}
+		w.Write([]byte(`{"export":"ok"}`))
+	}))
+	defer srv.Close()
+	pointDepsAtLoggedIn(t, srv.URL)
+
+	root := NewRootCmd()
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+	root.SetArgs([]string{"export", "promo", "--domain", "links.example.com", "-o", "-"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"/api/v1/urls/links.example.com/promo", "/api/v1/export/links/65f0abc123"}
+	if len(paths) != 2 || paths[0] != want[0] || paths[1] != want[1] {
+		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+}
