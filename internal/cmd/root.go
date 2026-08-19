@@ -1,9 +1,12 @@
 package cmd
 
 import (
-	"github.com/spf13/cobra"
+	"errors"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	"github.com/spf13/cobra"
+	spoo "github.com/spoo-me/spoo-go"
+	"github.com/spoo-me/spoo-go/option"
+
 	"github.com/spoo-me/spoo-cli/internal/auth"
 	"github.com/spoo-me/spoo-cli/internal/config"
 	"github.com/spoo-me/spoo-cli/internal/ui"
@@ -12,7 +15,7 @@ import (
 // deps bundles everything a command needs. Factory is a package var so
 // command tests can swap in a client pointed at httptest.
 type deps struct {
-	client *api.Client
+	client *spoo.Client
 	store  *auth.Store
 	cfg    config.Config
 }
@@ -24,7 +27,12 @@ var newDeps = func() (*deps, error) {
 		return nil, err
 	}
 	store := auth.NewStore(dir)
-	return &deps{client: api.New(cfg.APIBase, store), store: store, cfg: cfg}, nil
+	client := spoo.NewClient(
+		option.WithBaseURL(cfg.APIBase),
+		option.WithTokenSource(store),
+		option.WithClientTag(clientTag()),
+	)
+	return &deps{client: client, store: store, cfg: cfg}, nil
 }
 
 // NewRootCmd builds the spoo root command tree.
@@ -40,8 +48,34 @@ func NewRootCmd() *cobra.Command {
 	root.AddCommand(
 		newAuthCmd(), newWhoamiCmd(), newShortenCmd(),
 		newLinksCmd(), newStatsCmd(), newExportCmd(),
-		newKeysCmd(),
 		newOpenCmd(), newInspectCmd(), newQRCmd(),
 	)
+	humanizeErrors(root)
 	return root
+}
+
+// humanizeErrors wraps every command's RunE so the SDK's sentinel
+// conditions come out as CLI guidance instead of raw API messages. The
+// SDK owns detection (errors.Is); the CLI owns the wording.
+func humanizeErrors(cmd *cobra.Command) {
+	if run := cmd.RunE; run != nil {
+		cmd.RunE = func(c *cobra.Command, args []string) error {
+			return humanize(run(c, args))
+		}
+	}
+	for _, sub := range cmd.Commands() {
+		humanizeErrors(sub)
+	}
+}
+
+func humanize(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, spoo.ErrSessionExpired):
+		return errors.New("session expired — run `spoo auth login` again")
+	case errors.Is(err, spoo.ErrLinkPasswordProtected):
+		return errors.New("this link's stats are password protected")
+	}
+	return err
 }

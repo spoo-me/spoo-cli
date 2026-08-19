@@ -7,7 +7,8 @@ import (
 
 	lipgloss "charm.land/lipgloss/v2"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
@@ -16,7 +17,7 @@ import (
 // of a StatsResponse (and the previous window, for the delta badge). It
 // declares exactly what it reads instead of reaching into the model.
 type overviewCard struct {
-	res, prev *api.StatsResponse
+	res, prev *spoo.StatsResponse
 	metric    string
 	span      time.Duration
 	labelW    int
@@ -53,10 +54,10 @@ func (c overviewCard) render() string {
 	if active, ok := c.activeDays(); ok {
 		rows = append(rows, row("active days", active, plain))
 	}
-	if s.FirstClick != "" {
+	if !s.FirstClick.IsZero() {
 		rows = append(rows,
-			row("first click", kit.ISODate(s.FirstClick), plain),
-			row("last click", kit.ISODate(s.LastClick), plain))
+			row("first click", kit.Day(s.FirstClick), plain),
+			row("last click", kit.Day(s.LastClick), plain))
 	}
 	return strings.Join(rows, "\n")
 }
@@ -85,7 +86,7 @@ func (c overviewCard) deltaBadge() string {
 }
 
 func (c overviewCard) bestDay() (string, bool) {
-	var best api.MetricPoint
+	var best spoo.MetricPoint
 	for _, p := range c.res.Points("time", c.metric) {
 		if p.Value > best.Value {
 			best = p

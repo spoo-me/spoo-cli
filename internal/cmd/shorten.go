@@ -10,15 +10,15 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	spoo "github.com/spoo-me/spoo-go"
 	"golang.org/x/term"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
 func newShortenCmd() *cobra.Command {
 	var (
-		req     api.ShortenRequest
+		req     spoo.ShortenRequest
 		expires string
 		showQR  bool
 	)
@@ -29,7 +29,10 @@ func newShortenCmd() *cobra.Command {
 
 With a URL argument, shortens it directly. With input piped on stdin,
 shortens every non-empty line (one short URL per line out). With no
-argument on a terminal, opens an interactive form.`,
+argument on a terminal, opens an interactive form.
+
+Anonymous links come back with a one-time claim token — keep it and
+the link can be claimed into an account later from the dashboard.`,
 		Example: `  spoo shorten https://example.com/very/long/path
   spoo shorten https://example.com --alias launch --expires 72h
   spoo shorten https://example.com --qr
@@ -41,7 +44,7 @@ argument on a terminal, opens an interactive form.`,
 			if err != nil {
 				return err
 			}
-			if req.ExpireAfter, err = parseExpiry(expires, time.Now()); err != nil {
+			if req.ExpireAfter, err = spoo.ParseExpiry(expires, time.Now()); err != nil {
 				return err
 			}
 			asJSON, _ := cmd.Flags().GetBool("json")
@@ -82,7 +85,7 @@ func stdoutIsTerminal(cmd *cobra.Command) bool {
 	return ok && term.IsTerminal(int(f.Fd()))
 }
 
-func shortenOne(cmd *cobra.Command, d *deps, req api.ShortenRequest, asJSON, showQR bool) error {
+func shortenOne(cmd *cobra.Command, d *deps, req spoo.ShortenRequest, asJSON, showQR bool) error {
 	res, err := d.client.Shorten(cmd.Context(), req)
 	if err != nil {
 		return err
@@ -91,9 +94,11 @@ func shortenOne(cmd *cobra.Command, d *deps, req api.ShortenRequest, asJSON, sho
 }
 
 // shortenLines shortens each non-empty stdin line with the same flag
-// options. Sequential on purpose: authed accounts get 60 req/min.
-func shortenLines(cmd *cobra.Command, d *deps, base api.ShortenRequest, asJSON bool) error {
-	var results []*api.ShortURL
+// options. Sequential on purpose: authed accounts get 60 req/min, and
+// the SDK already retries transient failures per request — pushing
+// lines concurrently would just trade 429s for retries.
+func shortenLines(cmd *cobra.Command, d *deps, base spoo.ShortenRequest, asJSON bool) error {
+	var results []*spoo.ShortURL
 	scanner := bufio.NewScanner(cmd.InOrStdin())
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -111,6 +116,7 @@ func shortenLines(cmd *cobra.Command, d *deps, base api.ShortenRequest, asJSON b
 			results = append(results, res)
 		} else {
 			fmt.Fprintln(cmd.OutOrStdout(), res.ShortURL)
+			claimTokenNotice(cmd, res)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -124,7 +130,18 @@ func shortenLines(cmd *cobra.Command, d *deps, base api.ShortenRequest, asJSON b
 	return nil
 }
 
-func printShortURL(cmd *cobra.Command, res *api.ShortURL, asJSON, showQR bool) error {
+// claimTokenNotice tells an anonymous creator how to keep their link.
+// It goes to stderr so piped stdout stays exactly the short URLs.
+func claimTokenNotice(cmd *cobra.Command, res *spoo.ShortURL) {
+	if res.ClaimToken == "" {
+		return
+	}
+	fmt.Fprintf(cmd.ErrOrStderr(),
+		"claim token for %s: %s (anonymous link — keep it to claim the link into an account later)\n",
+		res.ShortURL, res.ClaimToken)
+}
+
+func printShortURL(cmd *cobra.Command, res *spoo.ShortURL, asJSON, showQR bool) error {
 	out := cmd.OutOrStdout()
 	if asJSON {
 		enc := json.NewEncoder(out)
@@ -137,6 +154,7 @@ func printShortURL(cmd *cobra.Command, res *api.ShortURL, asJSON, showQR bool) e
 		if _, err := io.WriteString(out, res.ShortURL+"\n"); err != nil {
 			return err
 		}
+		claimTokenNotice(cmd, res)
 		if showQR {
 			_, err := io.WriteString(out, ui.QR(res.ShortURL, false)+"\n")
 			return err
@@ -146,6 +164,10 @@ func printShortURL(cmd *cobra.Command, res *api.ShortURL, asJSON, showQR bool) e
 	body := ui.OK.Render("✓ Link created") + "\n\n" +
 		ui.Title.Render(res.ShortURL) + "\n" +
 		ui.Dim.Render("→ "+truncate(res.LongURL, 60))
+	if res.ClaimToken != "" {
+		body += "\n\n" + ui.Dim.Render("claim token  ") + res.ClaimToken + "\n" +
+			ui.Dim.Render("anonymous link — keep this token to claim it into an account later")
+	}
 	if showQR {
 		body += "\n\n" + ui.QR(res.ShortURL, false)
 	}

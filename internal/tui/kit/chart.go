@@ -5,7 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -47,7 +48,7 @@ func ParseBucketTime(label string) (time.Time, bool) {
 // MiniSpark draws a compact sparkline covering the WHOLE series: when
 // there are more points than columns they are summed into buckets, so
 // old activity is never silently cut off the left edge.
-func MiniSpark(pts []api.MetricPoint, width int) string {
+func MiniSpark(pts []spoo.MetricPoint, width int) string {
 	if len(pts) == 0 || width < 1 {
 		return ui.Dim.Render("no data")
 	}

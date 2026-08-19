@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	lipgloss "charm.land/lipgloss/v2"
+	spoo "github.com/spoo-me/spoo-go"
 )
 
 // PadToWidth right-pads by display width (emoji-safe, unlike %-*s).
@@ -28,12 +29,12 @@ func TruncateToWidth(s string, w int) string {
 	return string(r) + "…"
 }
 
-// ISODate keeps the YYYY-MM-DD prefix of an ISO 8601 timestamp.
-func ISODate(s string) string {
-	if len(s) >= 10 {
-		return s[:10]
+// Day renders a timestamp as YYYY-MM-DD, empty when unset.
+func Day(t spoo.Timestamp) string {
+	if t.IsZero() {
+		return ""
 	}
-	return s
+	return t.Format("2006-01-02")
 }
 
 // OrNever renders an empty value as "never".

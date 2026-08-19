@@ -3,11 +3,12 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
+	spoo "github.com/spoo-me/spoo-go"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/auth"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
@@ -42,12 +43,23 @@ workbook with one sheet per dimension.`,
 			if _, err := d.store.Load(); errors.Is(err, auth.ErrNotLoggedIn) {
 				return fmt.Errorf("export requires login — run `spoo auth login`")
 			}
-			q := api.StatsQuery{StartDate: from, EndDate: to}
-			var name string
-			var data []byte
+			fromT, err := parseDate(from)
+			if err != nil {
+				return err
+			}
+			toT, err := parseDate(to)
+			if err != nil {
+				return err
+			}
+			q := spoo.StatsQuery{StartDate: fromT, EndDate: toT}
+			var file *spoo.ExportFile
 			if len(args) == 1 {
-				u, err := d.client.ResolveAlias(cmd.Context(), args[0], domain)
-				if api.IsNotFound(err) {
+				resolveDomain := domain
+				if resolveDomain == "" {
+					resolveDomain = apiHost(d.cfg.APIBase)
+				}
+				u, err := d.client.ResolveAlias(cmd.Context(), args[0], resolveDomain)
+				if spoo.IsNotFound(err) {
 					where := args[0]
 					if domain != "" {
 						where += " on " + domain
@@ -57,25 +69,35 @@ workbook with one sheet per dimension.`,
 				if err != nil {
 					return err
 				}
-				name, data, err = d.client.ExportLink(cmd.Context(), u.ID, q, format)
-				if err != nil {
+				if file, err = d.client.ExportLink(cmd.Context(), u.ID, q, format); err != nil {
 					return err
 				}
-			} else if name, data, err = d.client.Export(cmd.Context(), q, format); err != nil {
+			} else if file, err = d.client.Export(cmd.Context(), q, format); err != nil {
 				return err
 			}
+			defer file.Body.Close()
+
 			if output == "-" {
-				_, err := cmd.OutOrStdout().Write(data)
+				_, err := io.Copy(cmd.OutOrStdout(), file.Body)
 				return err
 			}
+			name := file.Filename
 			if output != "" {
 				name = output
 			}
-			if err := os.WriteFile(name, data, 0o644); err != nil {
+			out, err := os.Create(name)
+			if err != nil {
+				return err
+			}
+			written, err := io.Copy(out, file.Body)
+			if closeErr := out.Close(); err == nil {
+				err = closeErr
+			}
+			if err != nil {
 				return err
 			}
 			fmt.Fprintln(prettyOut(cmd), ui.OK.Render("✓ exported ")+name+
-				ui.Dim.Render(fmt.Sprintf(" (%d bytes)", len(data))))
+				ui.Dim.Render(fmt.Sprintf(" (%d bytes)", written)))
 			return nil
 		},
 	}

@@ -7,7 +7,8 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 )
 
@@ -22,7 +23,7 @@ const (
 
 // defaultWindow is the widest window the server allows — the silent
 // server default is only 7 days, which hides most history.
-var defaultWindow = timeWindow{span: api.MaxRangeDays * 24 * time.Hour, label: "90d"}
+var defaultWindow = timeWindow{span: spoo.MaxRangeDays * 24 * time.Hour, label: "90d"}
 
 type panelDef struct{ key, title string }
 
@@ -45,8 +46,8 @@ type Target struct {
 }
 
 type statsLoadedMsg struct {
-	res  *api.StatsResponse
-	prev *api.StatsResponse // previous window, for period-over-period deltas
+	res  *spoo.StatsResponse
+	prev *spoo.StatsResponse // previous window, for period-over-period deltas
 	err  error
 }
 
@@ -66,7 +67,7 @@ type filterEntry struct {
 // period deltas, a dual-series time chart, focusable breakdown panels
 // with server-side drill-down, window paging, and a focus mode.
 type Model struct {
-	client   *api.Client
+	client   *spoo.Client
 	target   Target
 	loggedIn bool // gates the link switcher and export
 	tz       string
@@ -87,11 +88,11 @@ type Model struct {
 
 	switchMode bool // the 'g' link picker is up
 	switchBox  textinput.Model
-	switchAll  []api.URLItem // fetched once, cached for the session
-	switchSel  int           // 0 = "all links", 1.. = filtered items
+	switchAll  []spoo.URLItem // fetched once, cached for the session
+	switchSel  int            // 0 = "all links", 1.. = filtered items
 
-	res      *api.StatsResponse
-	prev     *api.StatsResponse
+	res      *spoo.StatsResponse
+	prev     *spoo.StatsResponse
 	fetchErr error
 	loading  bool
 	status   string
@@ -107,7 +108,7 @@ type Model struct {
 	height int
 }
 
-func New(client *api.Client, target Target, loggedIn bool, tz string) Model {
+func New(client *spoo.Client, target Target, loggedIn bool, tz string) Model {
 	rangeBox := textinput.New()
 	rangeBox.Placeholder = "type a range…"
 	rangeBox.SetWidth(36) // fits "2026-01-01 to 2026-02-15" with room; keeps the cheat-sheet column still

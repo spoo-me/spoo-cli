@@ -9,7 +9,9 @@ import (
 
 	"github.com/zalando/go-keyring"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+	"github.com/spoo-me/spoo-go/option"
+
 	"github.com/spoo-me/spoo-cli/internal/auth"
 	"github.com/spoo-me/spoo-cli/internal/config"
 )
@@ -45,7 +47,8 @@ func pointDepsAtLoggedIn(t *testing.T, srvURL string) {
 	}
 	orig := newDeps
 	newDeps = func() (*deps, error) {
-		return &deps{client: api.New(srvURL, store), store: store, cfg: config.Config{APIBase: srvURL}}, nil
+		client := spoo.NewClient(option.WithBaseURL(srvURL), option.WithTokenSource(store))
+		return &deps{client: client, store: store, cfg: config.Config{APIBase: srvURL}}, nil
 	}
 	t.Cleanup(func() { newDeps = orig })
 }

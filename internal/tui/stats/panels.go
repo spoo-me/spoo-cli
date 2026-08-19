@@ -6,7 +6,8 @@ import (
 
 	lipgloss "charm.land/lipgloss/v2"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
@@ -77,7 +78,7 @@ func (m Model) panelView(idx, width, contentRows, topN int) string {
 // between the trail and the number so neither the fill nor the dots ever
 // touch the digits. maxV/total (scaling the bars and shares) are derived
 // from the points; sel highlights one row (-1 for none).
-func (m Model) barLines(panelKey string, pts []api.MetricPoint, labelW, barMax, countW, sel int) []string {
+func (m Model) barLines(panelKey string, pts []spoo.MetricPoint, labelW, barMax, countW, sel int) []string {
 	var maxV, total float64
 	for _, pt := range pts {
 		maxV = max(maxV, pt.Value)

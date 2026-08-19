@@ -41,7 +41,7 @@ func newInspectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			res, err := d.client.Inspect(cmd.Context(), args[0])
+			res, err := inspectLink(cmd.Context(), strings.TrimRight(d.cfg.APIBase, "/"), args[0])
 			if err != nil {
 				return err
 			}

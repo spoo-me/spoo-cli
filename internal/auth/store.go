@@ -2,11 +2,13 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
 
+	spoo "github.com/spoo-me/spoo-go"
 	"github.com/zalando/go-keyring"
 )
 
@@ -73,6 +75,40 @@ func (s *Store) Clear() error {
 		return err
 	}
 	return nil
+}
+
+// Token implements spoo.TokenSource: the SDK asks for credentials
+// before every request. Not being logged in is not an error — it is
+// the anonymous mode the public endpoints accept.
+func (s *Store) Token(ctx context.Context) (spoo.Credentials, error) {
+	c, err := s.Load()
+	if errors.Is(err, ErrNotLoggedIn) {
+		return spoo.Credentials{}, nil
+	}
+	if err != nil {
+		return spoo.Credentials{}, err
+	}
+	switch c.Mode {
+	case ModeAPIKey:
+		return spoo.Credentials{APIKey: c.APIKey}, nil
+	case ModeDevice:
+		return spoo.Credentials{AccessToken: c.AccessToken, RefreshToken: c.RefreshToken}, nil
+	}
+	return spoo.Credentials{}, nil
+}
+
+// Update implements spoo.TokenSource: the SDK calls it after a token
+// refresh, and the rotated pair must be persisted — the old one is
+// already dead.
+func (s *Store) Update(ctx context.Context, creds spoo.Credentials) error {
+	if creds.APIKey != "" {
+		return s.Save(Credentials{Mode: ModeAPIKey, APIKey: creds.APIKey})
+	}
+	return s.Save(Credentials{
+		Mode:         ModeDevice,
+		AccessToken:  creds.AccessToken,
+		RefreshToken: creds.RefreshToken,
+	})
 }
 
 func unmarshalCreds(data []byte) (*Credentials, error) {

@@ -9,7 +9,7 @@ import (
 
 	huh "charm.land/huh/v2"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
 )
 
 var aliasRe = regexp.MustCompile(`^[A-Za-z0-9_-]{3,16}$`)
@@ -17,7 +17,7 @@ var aliasRe = regexp.MustCompile(`^[A-Za-z0-9_-]{3,16}$`)
 // runShortenForm collects shorten options interactively. The alias field
 // validates against the live check-alias endpoint (rate limit 180/min —
 // the backend sizes it for interactive use).
-func runShortenForm(ctx context.Context, client *api.Client, req *api.ShortenRequest) error {
+func runShortenForm(ctx context.Context, client *spoo.Client, req *spoo.ShortenRequest) error {
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewInput().

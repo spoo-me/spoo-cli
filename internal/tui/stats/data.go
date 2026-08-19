@@ -3,13 +3,15 @@ package stats
 import (
 	"context"
 	"image/color"
+	"io"
 	"os"
 	"sort"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
@@ -28,20 +30,20 @@ func (m Model) window() (start, end time.Time) {
 // query builds the stats request for the current dashboard state.
 // The public endpoint reads only the range and timezone from it — no
 // group_by (it answers with every dimension at once) and no filters.
-func (m Model) query() api.StatsQuery {
+func (m Model) query() spoo.StatsQuery {
 	start, end := m.window()
 	groupBy := []string{"time", "browser", "os", "country", "city", "referrer"}
 	if m.target.Kind == KindAccount {
 		groupBy = append(groupBy, "short_code")
 	}
-	q := api.StatsQuery{
-		StartDate: start.Format(time.RFC3339),
+	q := spoo.StatsQuery{
+		StartDate: start,
 		Timezone:  m.tz,
 		GroupBy:   groupBy,
 		Filters:   map[string][]string{},
 	}
 	if m.offset > 0 || !m.win.anchored() {
-		q.EndDate = end.Format(time.RFC3339)
+		q.EndDate = end
 	}
 	for _, f := range m.filters {
 		q.Filters[f.dim] = append(q.Filters[f.dim], f.value)
@@ -49,13 +51,21 @@ func (m Model) query() api.StatsQuery {
 	return q
 }
 
-// getStats routes a query to the target's endpoint.
-func (m Model) getStats(ctx context.Context, q api.StatsQuery) (*api.StatsResponse, error) {
+// getStats routes a query to the target's endpoint. The public
+// envelope pairs link facts with stats; the dashboard reads the stats
+// half.
+func (m Model) getStats(ctx context.Context, q spoo.StatsQuery) (*spoo.StatsResponse, error) {
 	switch m.target.Kind {
 	case KindOwnedLink:
 		return m.client.LinkStats(ctx, m.target.URLID, q)
 	case KindPublicLink:
-		return m.client.PublicStats(ctx, m.target.Alias, q.StartDate, q.EndDate, q.Timezone)
+		res, err := m.client.PublicStats(ctx, m.target.Alias, spoo.PublicStatsQuery{
+			StartDate: q.StartDate, EndDate: q.EndDate, Timezone: q.Timezone,
+		})
+		if err != nil {
+			return nil, err
+		}
+		return &res.Stats, nil
 	default:
 		return m.client.Stats(ctx, q)
 	}
@@ -68,12 +78,12 @@ func (m Model) fetch() tea.Cmd {
 	prevQ := q
 	prevQ.GroupBy = []string{"time"}
 	start, _ := m.window()
-	prevQ.StartDate = start.Add(-m.win.span).Format(time.RFC3339)
-	prevQ.EndDate = start.Format(time.RFC3339)
+	prevQ.StartDate = start.Add(-m.win.span)
+	prevQ.EndDate = start
 
 	return func() tea.Msg {
 		res, err := m.getStats(context.Background(), q)
-		var prev *api.StatsResponse
+		var prev *spoo.StatsResponse
 		if err == nil {
 			prev, _ = m.getStats(context.Background(), prevQ) // best-effort
 		}
@@ -98,24 +108,38 @@ func (m Model) openExport() (tea.Model, tea.Cmd) {
 }
 
 // export downloads the current view in the requested format and
-// writes it where the dialog pointed.
+// streams it to where the dialog pointed.
 func (m Model) export(req exportRequest) tea.Cmd {
 	client := m.client
 	target := m.target
 	q := m.query()
 	return func() tea.Msg {
-		var data []byte
+		var file *spoo.ExportFile
 		var err error
 		if target.Kind == KindOwnedLink {
-			_, data, err = client.ExportLink(context.Background(), target.URLID, q, req.format)
+			file, err = client.ExportLink(context.Background(), target.URLID, q, req.format)
 		} else {
-			_, data, err = client.Export(context.Background(), q, req.format)
+			file, err = client.Export(context.Background(), q, req.format)
 		}
 		if err == nil {
-			err = os.WriteFile(req.path, data, 0o644)
+			err = writeStream(req.path, file.Body)
 		}
 		return exportDoneMsg{name: collapseHome(req.path), err: err}
 	}
+}
+
+// writeStream copies a download body to disk, owning the close.
+func writeStream(path string, body io.ReadCloser) error {
+	defer body.Close()
+	out, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(out, body)
+	if closeErr := out.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }
 
 func autoTick() tea.Cmd {
@@ -124,7 +148,7 @@ func autoTick() tea.Cmd {
 
 // panelPoints returns a panel's rows for the active metric, capped to
 // n. Used by both rendering and drill-down so selection always matches.
-func (m Model) panelPoints(idx, n int) []api.MetricPoint {
+func (m Model) panelPoints(idx, n int) []spoo.MetricPoint {
 	if m.res == nil {
 		return nil
 	}
@@ -141,7 +165,7 @@ func (m Model) panelPoints(idx, n int) []api.MetricPoint {
 }
 
 // weekdayPoints folds the time series into a Mon→Sun distribution.
-func (m Model) weekdayPoints() []api.MetricPoint {
+func (m Model) weekdayPoints() []spoo.MetricPoint {
 	var totals [7]float64
 	for _, p := range m.res.Points("time", m.metric) {
 		if ts, ok := kit.ParseBucketTime(p.Label); ok {
@@ -149,10 +173,10 @@ func (m Model) weekdayPoints() []api.MetricPoint {
 		}
 	}
 	names := [7]string{"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"}
-	out := make([]api.MetricPoint, 0, 7)
+	out := make([]spoo.MetricPoint, 0, 7)
 	for i := 1; i <= 7; i++ { // Monday first
 		idx := i % 7
-		out = append(out, api.MetricPoint{Label: names[idx], Value: totals[idx]})
+		out = append(out, spoo.MetricPoint{Label: names[idx], Value: totals[idx]})
 	}
 	return out
 }

@@ -3,7 +3,8 @@ package links
 import (
 	"fmt"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
@@ -20,7 +21,7 @@ func (m Model) analyticsLines(alias string, label func(string) string, width int
 	}
 	res := e.res
 	if res.Summary.TotalClicks == 0 {
-		return []string{ui.Dim.Render(fmt.Sprintf("no clicks in the last %d days", api.MaxRangeDays))}
+		return []string{ui.Dim.Render(fmt.Sprintf("no clicks in the last %d days", spoo.MaxRangeDays))}
 	}
 	total := float64(res.Summary.TotalClicks)
 	unique := fmt.Sprintf("%d of %d clicks", res.Summary.UniqueClicks, res.Summary.TotalClicks)
@@ -40,7 +41,7 @@ func (m Model) analyticsLines(alias string, label func(string) string, width int
 
 // topOf names the dominant label of a dimension with its share; format
 // optionally decorates the label (e.g. country flag emoji).
-func topOf(res *api.StatsResponse, dimension string, total float64, format func(string) string) string {
+func topOf(res *spoo.StatsResponse, dimension string, total float64, format func(string) string) string {
 	pts := res.Points(dimension, "clicks")
 	if len(pts) == 0 {
 		return "—"

@@ -6,31 +6,36 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
+	spoo "github.com/spoo-me/spoo-go"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/auth"
 	"github.com/spoo-me/spoo-cli/internal/tui/stats"
 )
 
 // resolveTarget maps a short code and login state onto a stats surface.
 // Logged in with a code, the alias resolves to an owned link's url id on
-// the given domain (empty means the system default). On a 404 with
-// --domain set there is nowhere to fall back to — the public endpoint
-// serves only default-domain links — so it errors instead of silently
-// showing a different link's stats. Without --domain the code may still
-// be someone else's public default-domain link, so it falls back to the
-// public endpoint, announcing the switch on errOut.
-func resolveTarget(ctx context.Context, client *api.Client, code, domain, defaultDomain string, loggedIn bool, errOut io.Writer) (stats.Target, error) {
+// the given domain (empty means the system default — the SDK wants the
+// namespace spelled out, so the default is applied here where it is
+// visible policy). On a 404 with --domain set there is nowhere to fall
+// back to — the public endpoint serves only default-domain links — so it
+// errors instead of silently showing a different link's stats. Without
+// --domain the code may still be someone else's public default-domain
+// link, so it falls back to the public endpoint, announcing the switch
+// on errOut.
+func resolveTarget(ctx context.Context, client *spoo.Client, code, domain, defaultDomain string, loggedIn bool, errOut io.Writer) (stats.Target, error) {
 	switch {
 	case code == "":
 		return stats.Target{Kind: stats.KindAccount}, nil
 	case loggedIn:
-		u, err := client.ResolveAlias(ctx, code, domain)
-		if api.IsNotFound(err) {
+		resolveDomain := domain
+		if resolveDomain == "" {
+			resolveDomain = defaultDomain
+		}
+		u, err := client.ResolveAlias(ctx, code, resolveDomain)
+		if spoo.IsNotFound(err) {
 			if domain != "" {
 				return stats.Target{}, fmt.Errorf("%s on %s is not one of your links — public stats cover only %s links", code, domain, defaultDomain)
 			}
@@ -94,7 +99,16 @@ With a short code, shows that link — public stats work without login.`,
 			}
 			asJSON, _ := cmd.Flags().GetBool("json")
 
-			customRange := from != "" || to != ""
+			fromT, err := parseDate(from)
+			if err != nil {
+				return err
+			}
+			toT, err := parseDate(to)
+			if err != nil {
+				return err
+			}
+
+			customRange := !fromT.IsZero() || !toT.IsZero()
 			if !asJSON && !plain && !customRange && stdoutIsTerminal(cmd) {
 				model := stats.New(d.client, target, loggedIn, tz)
 				final, err := tea.NewProgram(model).Run()
@@ -109,23 +123,30 @@ With a short code, shows that link — public stats work without login.`,
 
 			// static path: the API's implicit default is only 7 days;
 			// use the widest window unless the user narrows it
-			if from == "" && to == "" {
-				from = timeNow().UTC().AddDate(0, 0, -api.MaxRangeDays).Format(time.RFC3339)
+			if fromT.IsZero() && toT.IsZero() {
+				fromT = timeNow().UTC().AddDate(0, 0, -spoo.MaxRangeDays)
 			}
-			q := api.StatsQuery{
-				StartDate: from,
-				EndDate:   to,
+			q := spoo.StatsQuery{
+				StartDate: fromT,
+				EndDate:   toT,
 				Timezone:  tz,
 				GroupBy:   []string{"time", "browser", "os", "country", "referrer"},
 			}
-			var res *api.StatsResponse
+			var res *spoo.StatsResponse
+			var link *spoo.PublicLinkFacts
 			switch target.Kind {
 			case stats.KindOwnedLink:
 				res, err = d.client.LinkStats(cmd.Context(), target.URLID, q)
 			case stats.KindPublicLink:
 				// no group_by here — the public endpoint returns every
-				// dimension in one response
-				res, err = d.client.PublicStats(cmd.Context(), code, from, to, tz)
+				// dimension in one response, alongside the link facts
+				var public *spoo.PublicStatsResult
+				public, err = d.client.PublicStats(cmd.Context(), code, spoo.PublicStatsQuery{
+					StartDate: fromT, EndDate: toT, Timezone: tz,
+				})
+				if public != nil {
+					res, link = &public.Stats, &public.Link
+				}
 			default:
 				res, err = d.client.Stats(cmd.Context(), q)
 			}
@@ -137,7 +158,7 @@ With a short code, shows that link — public stats work without login.`,
 				enc.SetIndent("", "  ")
 				return enc.Encode(res)
 			}
-			fmt.Fprintln(prettyOut(cmd), renderStats(res, code))
+			fmt.Fprintln(prettyOut(cmd), renderStats(res, code, link))
 			return nil
 		},
 	}

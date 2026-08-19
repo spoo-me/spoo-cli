@@ -8,7 +8,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
@@ -19,7 +20,7 @@ import (
 const switcherRows = 8 // result rows visible at once
 
 type linksListMsg struct {
-	items []api.URLItem
+	items []spoo.URLItem
 	err   error
 }
 
@@ -36,7 +37,7 @@ func (m Model) openSwitcher() (tea.Model, tea.Cmd) {
 	if m.switchAll == nil {
 		client := m.client
 		cmds = append(cmds, func() tea.Msg {
-			page, err := client.ListURLs(context.Background(), api.ListURLsOptions{
+			page, err := client.ListURLs(context.Background(), spoo.ListURLsOptions{
 				PageSize: 100, SortBy: "total_clicks",
 			})
 			if err != nil {
@@ -49,12 +50,12 @@ func (m Model) openSwitcher() (tea.Model, tea.Cmd) {
 }
 
 // switchCandidates filters the cached list by the typed query.
-func (m Model) switchCandidates() []api.URLItem {
+func (m Model) switchCandidates() []spoo.URLItem {
 	q := strings.ToLower(strings.TrimSpace(m.switchBox.Value()))
 	if q == "" {
 		return m.switchAll
 	}
-	var out []api.URLItem
+	var out []spoo.URLItem
 	for _, it := range m.switchAll {
 		if strings.Contains(strings.ToLower(it.Alias), q) ||
 			strings.Contains(strings.ToLower(it.LongURL), q) {

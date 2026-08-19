@@ -97,8 +97,8 @@ func (m Model) headerLine() string {
 	if m.target.Kind == KindPublicLink {
 		h += ui.Dim.Render(" (public)")
 	}
-	if m.res != nil && m.res.TimeRange.StartDate != "" {
-		h += ui.Dim.Render("  ·  " + kit.ISODate(m.res.TimeRange.StartDate) + " → " + kit.ISODate(m.res.TimeRange.EndDate))
+	if m.res != nil && !m.res.TimeRange.StartDate.IsZero() {
+		h += ui.Dim.Render("  ·  " + kit.Day(m.res.TimeRange.StartDate) + " → " + kit.Day(m.res.TimeRange.EndDate))
 	} else {
 		h += ui.Dim.Render("  ·  last " + m.win.label)
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
 )
 
 // timeWindow is the dashboard's stats window. Windows anchored to
@@ -133,8 +133,8 @@ func parseRangeExpr(input string, now time.Time) (timeWindow, error) {
 		return timeWindow{}, fmt.Errorf("start must precede end")
 	case span < time.Minute:
 		return timeWindow{}, fmt.Errorf("range must cover at least a minute")
-	case span > api.MaxRangeDays*24*time.Hour:
-		return timeWindow{}, fmt.Errorf("range exceeds the server's %dd cap", api.MaxRangeDays)
+	case span > spoo.MaxRangeDays*24*time.Hour:
+		return timeWindow{}, fmt.Errorf("range exceeds the server's %dd cap", spoo.MaxRangeDays)
 	}
 
 	w := timeWindow{span: span, label: s}

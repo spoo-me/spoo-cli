@@ -51,12 +51,14 @@ func TestExportAccountWide(t *testing.T) {
 // export endpoint.
 func TestExportOwnedLink(t *testing.T) {
 	var paths []string
+	var gotURLID string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
 		if strings.HasPrefix(r.URL.Path, "/api/v1/urls/") {
 			w.Write([]byte(`{"id":"65f0abc123","alias":"launch","long_url":"https://x.com","status":"ACTIVE"}`))
 			return
 		}
+		gotURLID = r.URL.Query().Get("url_id")
 		w.Write([]byte(`{"export":"ok"}`))
 	}))
 	defer srv.Close()
@@ -73,6 +75,9 @@ func TestExportOwnedLink(t *testing.T) {
 	want := []string{"/api/v1/urls/127.0.0.1/launch", "/api/v1/export/links/65f0abc123"}
 	if len(paths) != 2 || paths[0] != want[0] || paths[1] != want[1] {
 		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+	if gotURLID != "" {
+		t.Fatalf("url_id = %q, want no query param on the per-link route", gotURLID)
 	}
 }
 
