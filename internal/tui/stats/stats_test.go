@@ -617,8 +617,8 @@ func TestExportRoutesOwnedLinkToPerLinkEndpoint(t *testing.T) {
 	if done, ok := cmd().(exportDoneMsg); !ok || done.err != nil {
 		t.Fatalf("export failed: %+v", done)
 	}
-	if gotPath != "/api/v1/export" || gotURLID != "id-launch" {
-		t.Fatalf("path = %q url_id = %q, want the unified endpoint sliced by url_id", gotPath, gotURLID)
+	if gotPath != "/api/v1/export/links/id-launch" || gotURLID != "" {
+		t.Fatalf("path = %q url_id = %q, want the per-link endpoint with no url_id param", gotPath, gotURLID)
 	}
 }
 

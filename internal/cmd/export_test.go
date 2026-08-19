@@ -72,12 +72,12 @@ func TestExportOwnedLink(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"/api/v1/urls/127.0.0.1/launch", "/api/v1/export"}
+	want := []string{"/api/v1/urls/127.0.0.1/launch", "/api/v1/export/links/65f0abc123"}
 	if len(paths) != 2 || paths[0] != want[0] || paths[1] != want[1] {
 		t.Fatalf("paths = %v, want %v", paths, want)
 	}
-	if gotURLID != "65f0abc123" {
-		t.Fatalf("url_id = %q, want the resolved link id", gotURLID)
+	if gotURLID != "" {
+		t.Fatalf("url_id = %q, want no query param on the per-link route", gotURLID)
 	}
 }
 
@@ -122,7 +122,7 @@ func TestExportDomainFlagResolvesOnThatDomain(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"/api/v1/urls/links.example.com/promo", "/api/v1/export"}
+	want := []string{"/api/v1/urls/links.example.com/promo", "/api/v1/export/links/65f0abc123"}
 	if len(paths) != 2 || paths[0] != want[0] || paths[1] != want[1] {
 		t.Fatalf("paths = %v, want %v", paths, want)
 	}
