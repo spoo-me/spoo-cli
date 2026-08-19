@@ -253,3 +253,21 @@ func TestStatsDomainRequiresLogin(t *testing.T) {
 		t.Fatalf("err = %v, want a login requirement", err)
 	}
 }
+
+// a 451 comes out as takedown guidance instead of the raw API message.
+func TestStatsBlockedLinkHumanized(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnavailableForLegalReasons)
+		w.Write([]byte(`{"error":"URL is blocked","code":"blocked"}`))
+	}))
+	defer srv.Close()
+	pointDepsAt(t, srv.URL)
+
+	root := NewRootCmd()
+	root.SetOut(new(bytes.Buffer))
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"stats", "launch", "--plain"})
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "taken down") {
+		t.Fatalf("err = %v, want a takedown explanation", err)
+	}
+}

@@ -76,6 +76,8 @@ func humanize(err error) error {
 		return errors.New("session expired — run `spoo auth login` again")
 	case errors.Is(err, spoo.ErrLinkPasswordProtected):
 		return errors.New("this link's stats are password protected")
+	case errors.Is(err, spoo.ErrLinkBlocked):
+		return errors.New("this link was taken down for violating the content policy")
 	}
 	return err
 }
