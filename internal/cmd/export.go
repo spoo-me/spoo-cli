@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	spoo "github.com/spoo-me/spoo-go"
@@ -81,9 +82,9 @@ workbook with one sheet per dimension.`,
 				_, err := io.Copy(cmd.OutOrStdout(), file.Body)
 				return err
 			}
-			name := file.Filename
-			if output != "" {
-				name = output
+			name := output
+			if name == "" {
+				name = safeFilename(file.Filename, format)
 			}
 			out, err := os.Create(name)
 			if err != nil {
@@ -109,4 +110,21 @@ workbook with one sheet per dimension.`,
 	fixed(cmd, "format", "json", "csv", "xlsx", "xml")
 	flagComp(cmd, "domain", completeDomain)
 	return cmd
+}
+
+// safeFilename hardens the server-suggested export name. The SDK
+// already reduces Content-Disposition to a bare filename, but the CLI
+// is the one calling os.Create, so it keeps its own guard: strip any
+// path components and fall back to a synthesized name when nothing
+// usable remains. Applies only to server-suggested names; an explicit
+// --output is the user's own choice of path.
+func safeFilename(name, format string) string {
+	name = filepath.Base(name)
+	if name == "" || name == "." || name == ".." || name == string(filepath.Separator) {
+		if format == "csv" {
+			return "spoo-export.zip" // csv arrives zipped
+		}
+		return "spoo-export." + format
+	}
+	return name
 }

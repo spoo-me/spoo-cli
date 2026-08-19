@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -125,5 +127,60 @@ func TestExportDomainFlagResolvesOnThatDomain(t *testing.T) {
 	want := []string{"/api/v1/urls/links.example.com/promo", "/api/v1/export/links/65f0abc123"}
 	if len(paths) != 2 || paths[0] != want[0] || paths[1] != want[1] {
 		t.Fatalf("paths = %v, want %v", paths, want)
+	}
+}
+
+func TestSafeFilename(t *testing.T) {
+	for _, tt := range []struct {
+		name, format, want string
+	}{
+		{"stats.json", "json", "stats.json"},
+		{"../../evil.json", "json", "evil.json"},
+		{"/etc/passwd", "json", "passwd"},
+		{".", "json", "spoo-export.json"},
+		{"..", "json", "spoo-export.json"},
+		{"", "json", "spoo-export.json"},
+		{"", "csv", "spoo-export.zip"},
+		{"/", "xlsx", "spoo-export.xlsx"},
+	} {
+		if got := safeFilename(tt.name, tt.format); got != tt.want {
+			t.Errorf("safeFilename(%q, %q) = %q, want %q", tt.name, tt.format, got, tt.want)
+		}
+	}
+}
+
+// a hostile Content-Disposition must never steer the write outside the
+// working directory: the SDK strips the name and the CLI guards again
+// before os.Create.
+func TestExportServerFilenameStaysInWorkingDir(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Disposition", `attachment; filename="../../evil.json"`)
+		w.Write([]byte(`{"export":"ok"}`))
+	}))
+	defer srv.Close()
+	pointDepsAtLoggedIn(t, srv.URL)
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	root := NewRootCmd()
+	root.SetOut(new(bytes.Buffer))
+	root.SetErr(new(bytes.Buffer))
+	root.SetArgs([]string{"export"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected exactly one exported file in cwd, got %v", entries)
+	}
+	name := entries[0].Name()
+	if name != filepath.Base(name) || strings.Contains(name, "..") {
+		t.Fatalf("exported name %q escaped sanitization", name)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "..", "..", "evil.json")); err == nil {
+		t.Fatal("export escaped the working directory")
 	}
 }
