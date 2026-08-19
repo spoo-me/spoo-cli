@@ -139,11 +139,20 @@ func newLinksUpdateCmd() *cobra.Command {
 			// map to null.
 			var params spoo.UpdateURLParams
 			changed := 0
+			// long_url and alias are not clearable: an empty value would
+			// serialize to an empty PATCH body and "succeed" having
+			// changed nothing, so reject it up front.
 			if cmd.Flags().Changed("long-url") {
+				if longURL == "" {
+					return fmt.Errorf("--long-url cannot be empty")
+				}
 				params.LongURL = longURL
 				changed++
 			}
 			if cmd.Flags().Changed("alias") {
+				if alias == "" {
+					return fmt.Errorf("--alias cannot be empty")
+				}
 				params.Alias = alias
 				changed++
 			}

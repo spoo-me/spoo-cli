@@ -93,3 +93,26 @@ func TestLinksUpdateStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// an explicitly empty --alias or --long-url used to serialize to an
+// empty PATCH body and report success having changed nothing.
+func TestLinksUpdateRejectsEmptyValues(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("no request should be sent, got %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+	pointDepsAt(t, srv.URL)
+
+	for flag, wantErr := range map[string]string{
+		"--alias":    "--alias cannot be empty",
+		"--long-url": "--long-url cannot be empty",
+	} {
+		root := NewRootCmd()
+		root.SetOut(new(bytes.Buffer))
+		root.SetErr(new(bytes.Buffer))
+		root.SetArgs([]string{"links", "update", "a1", flag, ""})
+		if err := root.Execute(); err == nil || !strings.Contains(err.Error(), wantErr) {
+			t.Errorf("%s \"\": err = %v, want %q", flag, err, wantErr)
+		}
+	}
+}
