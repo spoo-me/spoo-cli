@@ -13,7 +13,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
@@ -33,7 +34,7 @@ const (
 var sortFields = []string{"total_clicks", "created_at", "last_click"}
 
 type pageMsg struct {
-	page *api.URLPage
+	page *spoo.URLPage
 	err  error
 }
 
@@ -50,12 +51,12 @@ type statsTickMsg struct {
 
 type statsMsg struct {
 	alias string
-	res   *api.StatsResponse
+	res   *spoo.StatsResponse
 	err   error
 }
 
 type statsEntry struct {
-	res *api.StatsResponse
+	res *spoo.StatsResponse
 	err error
 }
 
@@ -63,26 +64,26 @@ type statsEntry struct {
 // GET /api/v1/urls with open/copy/toggle/delete actions, live search
 // (/), sort cycling (s), and a master-detail pane (enter).
 type Model struct {
-	client      *api.Client
+	client      *spoo.Client
 	apiBase     string
 	openBrowser func(string) error
 	copyText    func(string) error
 
-	opts api.ListURLsOptions // current query: search, sort, status, page size
+	opts spoo.ListURLsOptions // current query: search, sort, status, page size
 
 	tbl          table.Model
 	pager        paginator.Model
 	searchBox    textinput.Model
 	searching    bool
-	edit         editForm       // 'e' opens the pre-filled link editor
-	confirm      confirmDialog  // shared save/delete confirmation
-	pendingPATCH map[string]any // edit changes awaiting confirmation
-	helper       help.Model     // ? flips between short and full key help
-	qrURL        string         // non-empty: the QR dialog is up for this URL
-	showDetail   bool           // detail pane open; it always reflects the selected row
+	edit         editForm             // 'e' opens the pre-filled link editor
+	confirm      confirmDialog        // shared save/delete confirmation
+	pendingPATCH spoo.UpdateURLParams // edit changes awaiting confirmation
+	helper       help.Model           // ? flips between short and full key help
+	qrURL        string               // non-empty: the QR dialog is up for this URL
+	showDetail   bool                 // detail pane open; it always reflects the selected row
 	stats        map[string]statsEntry
 	statsSeq     int // bumped on selection change; stale debounce ticks no-op
-	page         *api.URLPage
+	page         *spoo.URLPage
 	pageNo       int
 	status       string // transient status-bar message
 	loading      bool
@@ -91,7 +92,7 @@ type Model struct {
 	height       int
 }
 
-func New(client *api.Client, apiBase string, opts api.ListURLsOptions, openBrowser, copyText func(string) error) Model {
+func New(client *spoo.Client, apiBase string, opts spoo.ListURLsOptions, openBrowser, copyText func(string) error) Model {
 	if opts.PageSize <= 0 {
 		opts.PageSize = defaultPageSize
 	}
@@ -186,7 +187,7 @@ func (m *Model) syncPager() {
 
 func (m Model) Init() tea.Cmd { return m.fetch(m.pageNo) }
 
-func (m Model) selected() *api.URLItem {
+func (m Model) selected() *spoo.URLItem {
 	if m.page == nil || len(m.page.Items) == 0 {
 		return nil
 	}
@@ -197,7 +198,7 @@ func (m Model) selected() *api.URLItem {
 	return &m.page.Items[i]
 }
 
-func (m Model) shortURL(it *api.URLItem) string {
+func (m Model) shortURL(it *spoo.URLItem) string {
 	if it.Domain != "" {
 		return "https://" + it.Domain + "/" + it.Alias
 	}
@@ -221,7 +222,7 @@ func (m Model) rows() []table.Row {
 			it.LongURL,
 			strconv.Itoa(it.TotalClicks),
 			it.Status,
-			kit.ISODate(it.CreatedAt),
+			kit.Day(it.CreatedAt),
 		})
 	}
 	return rows

@@ -11,8 +11,10 @@ require (
 	github.com/NimbleMarkets/ntcharts/v2 v2.2.0
 	github.com/atotto/clipboard v0.1.4
 	github.com/charmbracelet/colorprofile v0.4.3
+	github.com/mdp/qrterminal/v3 v3.2.1
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c
 	github.com/spf13/cobra v1.10.2
+	github.com/spoo-me/spoo-go v0.3.0
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/term v0.44.0
 )
@@ -36,7 +38,6 @@ require (
 	github.com/lrstanley/bubblezone/v2 v2.0.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.4.0 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
-	github.com/mdp/qrterminal/v3 v3.2.1 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/mango v0.1.0 // indirect

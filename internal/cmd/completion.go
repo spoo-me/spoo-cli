@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
 )
 
 // completionTimeout bounds the network fetch behind a Tab press so the
@@ -28,14 +28,14 @@ func completionContext(cmd *cobra.Command) (context.Context, context.CancelFunc)
 // completionURLs fetches the signed-in user's links for shell completion.
 // It is best-effort: any failure (not logged in, offline, timeout) yields
 // no items, so completion silently offers nothing instead of erroring.
-func completionURLs(cmd *cobra.Command) []api.URLItem {
+func completionURLs(cmd *cobra.Command) []spoo.URLItem {
 	d, err := newDeps()
 	if err != nil {
 		return nil
 	}
 	ctx, cancel := completionContext(cmd)
 	defer cancel()
-	page, err := d.client.ListURLs(ctx, api.ListURLsOptions{
+	page, err := d.client.ListURLs(ctx, spoo.ListURLsOptions{
 		PageSize: 100, SortBy: "last_click", SortOrder: "descending",
 	})
 	if err != nil {
@@ -72,32 +72,6 @@ func completeLinkID(cmd *cobra.Command, args []string, toComplete string) ([]str
 		if strings.HasPrefix(it.ID, toComplete) {
 			out = append(out, it.ID+"\t"+it.Alias)
 		}
-	}
-	return out, cobra.ShellCompDirectiveNoFileComp
-}
-
-// completeKeyID completes the <id> of `keys revoke`, described by the key
-// name and skipping already-revoked keys.
-func completeKeyID(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	if len(args) > 0 {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	d, err := newDeps()
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	ctx, cancel := completionContext(cmd)
-	defer cancel()
-	keys, err := d.client.ListKeys(ctx)
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	var out []string
-	for _, k := range keys {
-		if k.Revoked || !strings.HasPrefix(k.ID, toComplete) {
-			continue
-		}
-		out = append(out, k.ID+"\t"+k.Name)
 	}
 	return out, cobra.ShellCompDirectiveNoFileComp
 }

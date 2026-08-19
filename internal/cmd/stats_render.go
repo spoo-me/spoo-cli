@@ -5,7 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
@@ -14,7 +15,7 @@ const (
 	topNPerDim = 5
 )
 
-func renderBarChart(title string, points []api.MetricPoint, total float64) string {
+func renderBarChart(title string, points []spoo.MetricPoint, total float64) string {
 	if len(points) == 0 {
 		return ""
 	}
@@ -41,7 +42,7 @@ func renderBarChart(title string, points []api.MetricPoint, total float64) strin
 	return b.String()
 }
 
-func renderSparkline(points []api.MetricPoint) string {
+func renderSparkline(points []spoo.MetricPoint) string {
 	if len(points) == 0 {
 		return ""
 	}
@@ -68,7 +69,9 @@ func renderSparkline(points []api.MetricPoint) string {
 	return b.String()
 }
 
-func renderStats(res *api.StatsResponse, target string) string {
+// renderStats renders the static report. link carries the public
+// envelope's link facts and is nil on the owner surfaces.
+func renderStats(res *spoo.StatsResponse, target string, link *spoo.PublicLinkFacts) string {
 	var sections []string
 
 	header := "all links"
@@ -76,8 +79,8 @@ func renderStats(res *api.StatsResponse, target string) string {
 		header = target
 	}
 	title := ui.Title.Render("Stats · " + header)
-	if res.TimeRange.StartDate != "" {
-		title += ui.Dim.Render("  " + isoDay(res.TimeRange.StartDate) + " → " + isoDay(res.TimeRange.EndDate))
+	if !res.TimeRange.StartDate.IsZero() {
+		title += ui.Dim.Render("  " + day(res.TimeRange.StartDate) + " → " + day(res.TimeRange.EndDate))
 	}
 	summary := fmt.Sprintf("%s\n\n%s  %s\n%s  %s",
 		title,
@@ -86,6 +89,9 @@ func renderStats(res *api.StatsResponse, target string) string {
 		firstLast(res.Summary),
 		ui.Dim.Render(fmt.Sprintf("avg redirect %.0fms", res.Summary.AvgRedirectionTime)),
 	)
+	if facts := linkFactsLine(link); facts != "" {
+		summary += "\n" + facts
+	}
 	sections = append(sections, ui.Box.Render(summary))
 
 	if pts := res.Points("time", "clicks"); len(pts) > 0 {
@@ -113,23 +119,31 @@ func renderStats(res *api.StatsResponse, target string) string {
 	return strings.Join(sections, "\n")
 }
 
-func isoDay(s string) string {
-	if len(s) >= 10 {
-		return s[:10]
+// linkFactsLine summarizes the public envelope's link half: what the
+// link is, next to how it performs.
+func linkFactsLine(link *spoo.PublicLinkFacts) string {
+	if link == nil {
+		return ""
 	}
-	return s
+	var parts []string
+	if link.Status != "" {
+		parts = append(parts, link.Status)
+	}
+	if link.LongURL != "" {
+		parts = append(parts, "→ "+truncate(link.LongURL, 60))
+	}
+	if link.PasswordProtected {
+		parts = append(parts, "password protected")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return ui.Dim.Render(strings.Join(parts, "  ·  "))
 }
 
-func firstLast(s api.StatsSummary) string {
-	if s.FirstClick == "" {
+func firstLast(s spoo.StatsSummary) string {
+	if s.FirstClick.IsZero() {
 		return ui.Dim.Render("no clicks yet")
 	}
-	first, last := s.FirstClick, s.LastClick
-	if len(first) >= 10 {
-		first = first[:10]
-	}
-	if len(last) >= 10 {
-		last = last[:10]
-	}
-	return ui.Dim.Render("first " + first + " · last " + last)
+	return ui.Dim.Render("first " + day(s.FirstClick) + " · last " + day(s.LastClick))
 }

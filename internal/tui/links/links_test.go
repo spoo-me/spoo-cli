@@ -1,7 +1,7 @@
 package links
 
 import (
-	"fmt"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -11,20 +11,28 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/zalando/go-keyring"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+	"github.com/spoo-me/spoo-go/option"
+
 	"github.com/spoo-me/spoo-cli/internal/auth"
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 )
+
+// newTestClient builds an SDK client wired to the store, the same way
+// the commands construct theirs.
+func newTestClient(base string, store *auth.Store) *spoo.Client {
+	return spoo.NewClient(option.WithBaseURL(base), option.WithTokenSource(store))
+}
 
 func newLinksModelWithPage(t *testing.T, srvURL string) Model {
 	t.Helper()
 	keyring.MockInit()
 	_ = keyring.Delete("spoo-cli", "credentials")
-	client := api.New(srvURL, auth.NewStore(t.TempDir()))
-	m := New(client, srvURL, api.ListURLsOptions{}, func(string) error { return nil }, func(string) error { return nil })
+	client := newTestClient(srvURL, auth.NewStore(t.TempDir()))
+	m := New(client, srvURL, spoo.ListURLsOptions{}, func(string) error { return nil }, func(string) error { return nil })
 
-	page := &api.URLPage{
-		Items: []api.URLItem{
+	page := &spoo.URLPage{
+		Items: []spoo.URLItem{
 			{ID: "id-first", Alias: "first", LongURL: "https://a.com", Status: "ACTIVE"},
 			{ID: "id-second", Alias: "second", LongURL: "https://b.com", Status: "ACTIVE"},
 			{ID: "id-third", Alias: "third", LongURL: "https://c.com", Status: "ACTIVE"},
@@ -114,8 +122,8 @@ func TestFetchCarriesOptions(t *testing.T) {
 	defer srv.Close()
 
 	keyring.MockInit()
-	client := api.New(srv.URL, auth.NewStore(t.TempDir()))
-	m := New(client, srv.URL, api.ListURLsOptions{
+	client := newTestClient(srv.URL, auth.NewStore(t.TempDir()))
+	m := New(client, srv.URL, spoo.ListURLsOptions{
 		SortBy: "last_click", PageSize: 50, Status: "INACTIVE", Search: "demo",
 	}, nil, nil)
 	m.Init()() // run the initial fetch command
@@ -131,8 +139,8 @@ func TestFetchCarriesOptions(t *testing.T) {
 
 func TestDefaultSortIsTotalClicks(t *testing.T) {
 	keyring.MockInit()
-	client := api.New("http://unused.invalid", auth.NewStore(t.TempDir()))
-	m := New(client, "http://unused.invalid", api.ListURLsOptions{}, nil, nil)
+	client := newTestClient("http://unused.invalid", auth.NewStore(t.TempDir()))
+	m := New(client, "http://unused.invalid", spoo.ListURLsOptions{}, nil, nil)
 	if m.opts.SortBy != "total_clicks" {
 		t.Fatalf("default sort = %q, want total_clicks", m.opts.SortBy)
 	}
@@ -365,7 +373,7 @@ func TestStatsDebounceDropsStaleTicks(t *testing.T) {
 // cached rows schedule nothing — revisiting is free.
 func TestStatsCacheSkipsRefetch(t *testing.T) {
 	m := newLinksModelWithPage(t, "http://unused.invalid")
-	m.stats["first"] = statsEntry{res: &api.StatsResponse{}}
+	m.stats["first"] = statsEntry{res: &spoo.StatsResponse{}}
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
 	if cmd != nil {
@@ -381,8 +389,8 @@ func TestDetailRendersAnalytics(t *testing.T) {
 	m := newLinksModelWithPage(t, "http://unused.invalid")
 	next, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
-	next, _ = m.Update(statsMsg{alias: "first", res: &api.StatsResponse{
-		Summary: api.StatsSummary{TotalClicks: 10, UniqueClicks: 4, AvgRedirectionTime: 42},
+	next, _ = m.Update(statsMsg{alias: "first", res: &spoo.StatsResponse{
+		Summary: spoo.StatsSummary{TotalClicks: 10, UniqueClicks: 4, AvgRedirectionTime: 42},
 		Metrics: map[string][]map[string]any{
 			"clicks_by_time":    {{"time": "2026-06-01", "clicks": 10.0}},
 			"clicks_by_browser": {{"browser": "Chrome", "clicks": 9.0}},
@@ -402,9 +410,9 @@ func TestDetailRendersAnalytics(t *testing.T) {
 // the sparkline covers the whole series: early activity must not be
 // truncated off the left edge when there are more points than columns.
 func TestMiniSparkDownsamplesWholeSeries(t *testing.T) {
-	pts := make([]api.MetricPoint, 90)
+	pts := make([]spoo.MetricPoint, 90)
 	for i := range pts {
-		pts[i] = api.MetricPoint{Label: "d", Value: 0}
+		pts[i] = spoo.MetricPoint{Label: "d", Value: 0}
 	}
 	pts[3].Value = 28 // old spike, far outside the last 30 columns
 	got := kit.MiniSpark(pts, 30)
@@ -445,14 +453,14 @@ func TestQRDialog(t *testing.T) {
 // The edit form diffs against the original and only PATCHes real changes.
 func TestEditFormChanges(t *testing.T) {
 	max := 100
-	it := api.URLItem{
+	it := spoo.URLItem{
 		ID: "id-x", Alias: "launch", LongURL: "https://old.com",
 		Status: "ACTIVE", MaxClicks: &max,
 	}
 	e, _ := newEditForm().show(it)
 
 	// no edits → no changes
-	if ch, _ := e.changes(); len(ch) != 0 {
+	if _, ch, _ := e.changes(); len(ch) != 0 {
 		t.Fatalf("unchanged form yields %v, want empty", ch)
 	}
 
@@ -461,24 +469,37 @@ func TestEditFormChanges(t *testing.T) {
 	e.inputs[fAlias].SetValue("promo")
 	e.inputs[fMaxClicks].SetValue("0")
 	e.status = "inactive"
-	ch, err := e.changes()
+	params, ch, err := e.changes()
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]any{
-		"long_url": "https://new.com", "alias": "promo",
-		"max_clicks": 0, "status": "INACTIVE", // API enum is upper-case
+	if len(ch) != 4 {
+		t.Fatalf("changes = %v, want 4 entries", ch)
 	}
-	if len(ch) != len(want) {
-		t.Fatalf("changes = %v, want %v", ch, want)
+	if params.LongURL != "https://new.com" || params.Alias != "promo" {
+		t.Fatalf("params = %+v", params)
 	}
-	for k, v := range want {
-		if fmt.Sprintf("%v", ch[k]) != fmt.Sprintf("%v", v) {
-			t.Fatalf("changes[%q] = %v, want %v", k, ch[k], v)
-		}
+	if params.Status != "INACTIVE" { // API enum is upper-case
+		t.Fatalf("status = %q, want INACTIVE", params.Status)
 	}
-	if _, ok := ch["password"]; ok {
+	// 0 means "remove the limit": the tri-state PATCH spells that null
+	if !params.MaxClicks.IsNull() {
+		t.Fatalf("max_clicks = %+v, want explicit null", params.MaxClicks)
+	}
+	if !params.Password.IsZero() {
 		t.Fatal("blank password must not be sent")
+	}
+
+	// the wire body carries null for the cleared limit and omits password
+	body, err := json.Marshal(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"max_clicks":null`) {
+		t.Fatalf("body = %s, want max_clicks:null", body)
+	}
+	if strings.Contains(string(body), "password") {
+		t.Fatalf("body = %s, must omit password", body)
 	}
 }
 

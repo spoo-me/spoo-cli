@@ -75,28 +75,6 @@ func TestCompleteLinkIDDescribedByAlias(t *testing.T) {
 	}
 }
 
-func TestCompleteKeyIDDescribedByName(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/keys" {
-			t.Errorf("unexpected path %s", r.URL.Path)
-		}
-		w.Write([]byte(`{"keys":[
-			{"id":"k1","name":"ci-bot","revoked":false},
-			{"id":"k2","name":"old","revoked":true}
-		]}`))
-	}))
-	defer srv.Close()
-	pointDepsAt(t, srv.URL)
-
-	out := complete(t, "keys", "revoke", "")
-	if !strings.Contains(out, "k1\tci-bot") {
-		t.Fatalf("revoke should complete live key ids by name:\n%s", out)
-	}
-	if strings.Contains(out, "k2") {
-		t.Fatalf("revoked keys should be omitted:\n%s", out)
-	}
-}
-
 func TestCompleteFixedFlags(t *testing.T) {
 	pointDepsAt(t, "http://unused.invalid")
 	out := complete(t, "export", "--format", "")

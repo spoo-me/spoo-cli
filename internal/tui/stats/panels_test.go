@@ -9,7 +9,8 @@ import (
 	lipgloss "charm.land/lipgloss/v2"
 	"github.com/zalando/go-keyring"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/auth"
 )
 
@@ -21,10 +22,10 @@ var ansiRe = regexp.MustCompile("\x1b\\[[0-9;]*m")
 // no row's bar touching its number.
 func TestPanelRowsAligned(t *testing.T) {
 	keyring.MockInit()
-	client := api.New("http://x", auth.NewStore(t.TempDir()))
+	client := newTestClient("http://x", auth.NewStore(t.TempDir()))
 	m := New(client, Target{}, true, "")
-	resp := &api.StatsResponse{
-		Summary: api.StatsSummary{TotalClicks: 287558},
+	resp := &spoo.StatsResponse{
+		Summary: spoo.StatsSummary{TotalClicks: 287558},
 		Metrics: map[string][]map[string]any{
 			"clicks_by_browser": {
 				{"browser": "Chrome", "clicks": 131881.0},

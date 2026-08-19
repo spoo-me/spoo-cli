@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
 )
 
 func TestLinksListJSON(t *testing.T) {
@@ -29,7 +29,7 @@ func TestLinksListJSON(t *testing.T) {
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	var page api.URLPage
+	var page spoo.URLPage
 	if err := json.Unmarshal(out.Bytes(), &page); err != nil {
 		t.Fatalf("output is not JSON: %v\n%s", err, out.String())
 	}

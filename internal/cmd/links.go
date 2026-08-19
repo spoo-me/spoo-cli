@@ -5,19 +5,20 @@ import (
 	"fmt"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/atotto/clipboard"
 	"github.com/pkg/browser"
 	"github.com/spf13/cobra"
+	spoo "github.com/spoo-me/spoo-go"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
 	"github.com/spoo-me/spoo-cli/internal/tui/links"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
 
 func newLinksCmd() *cobra.Command {
-	var opts api.ListURLsOptions
+	var opts spoo.ListURLsOptions
 	cmd := &cobra.Command{
 		Use:   "links",
 		Short: "Browse and manage your links",
@@ -67,7 +68,7 @@ toggle, delete). Piped or with --json it prints the list and exits.`,
 	return cmd
 }
 
-func printLinksList(cmd *cobra.Command, d *deps, opts api.ListURLsOptions, asJSON bool) error {
+func printLinksList(cmd *cobra.Command, d *deps, opts spoo.ListURLsOptions, asJSON bool) error {
 	page, err := d.client.ListURLs(cmd.Context(), opts)
 	if err != nil {
 		return err
@@ -81,12 +82,8 @@ func printLinksList(cmd *cobra.Command, d *deps, opts api.ListURLsOptions, asJSO
 	w := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tALIAS\tDESTINATION\tCLICKS\tSTATUS\tCREATED")
 	for _, it := range page.Items {
-		created := it.CreatedAt
-		if len(created) >= 10 {
-			created = created[:10]
-		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%s\n",
-			it.ID, it.Alias, truncate(it.LongURL, 60), it.TotalClicks, it.Status, created)
+			it.ID, it.Alias, truncate(it.LongURL, 60), it.TotalClicks, it.Status, day(it.CreatedAt))
 	}
 	return w.Flush()
 }
@@ -135,33 +132,54 @@ func newLinksUpdateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fields := map[string]any{}
+			// the API's PATCH is tri-state: an omitted field keeps the
+			// current setting, null clears it, a value replaces it. A
+			// flag the user didn't pass stays omitted; the "remove"
+			// spellings (--max-clicks 0, empty --password/--expires)
+			// map to null.
+			var params spoo.UpdateURLParams
+			changed := 0
 			if cmd.Flags().Changed("long-url") {
-				fields["long_url"] = longURL
+				params.LongURL = longURL
+				changed++
 			}
 			if cmd.Flags().Changed("alias") {
-				fields["alias"] = alias
+				params.Alias = alias
+				changed++
 			}
 			if cmd.Flags().Changed("password") {
-				fields["password"] = password
+				params.Password = spoo.Set(password)
+				if password == "" {
+					params.Password = spoo.Null[string]()
+				}
+				changed++
 			}
 			if cmd.Flags().Changed("max-clicks") {
-				fields["max_clicks"] = maxClicks
+				params.MaxClicks = spoo.Set(maxClicks)
+				if maxClicks == 0 {
+					params.MaxClicks = spoo.Null[int]()
+				}
+				changed++
 			}
 			if cmd.Flags().Changed("expires") {
-				exp, err := parseExpiry(expires, timeNow())
+				exp, err := spoo.ParseExpiry(expires, timeNow())
 				if err != nil {
 					return err
 				}
-				fields["expire_after"] = exp
+				params.ExpireAfter = spoo.Set(exp)
+				if exp.IsZero() {
+					params.ExpireAfter = spoo.Null[time.Time]()
+				}
+				changed++
 			}
 			if cmd.Flags().Changed("status") {
-				fields["status"] = normalizeStatus(status)
+				params.Status = normalizeStatus(status)
+				changed++
 			}
-			if len(fields) == 0 {
+			if changed == 0 {
 				return fmt.Errorf("nothing to update — pass at least one flag")
 			}
-			res, err := d.client.UpdateURL(cmd.Context(), args[0], fields)
+			res, err := d.client.UpdateURL(cmd.Context(), args[0], params)
 			if err != nil {
 				return err
 			}
@@ -177,9 +195,9 @@ func newLinksUpdateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&longURL, "long-url", "", "new destination URL")
 	cmd.Flags().StringVar(&alias, "alias", "", "new alias")
-	cmd.Flags().StringVar(&password, "password", "", "new password")
+	cmd.Flags().StringVar(&password, "password", "", "new password (empty removes it)")
 	cmd.Flags().IntVar(&maxClicks, "max-clicks", 0, "click limit (0 removes it)")
-	cmd.Flags().StringVar(&expires, "expires", "", "expiry: ISO 8601, epoch, or duration like 72h")
+	cmd.Flags().StringVar(&expires, "expires", "", "expiry: ISO 8601, epoch, or duration like 72h (empty removes it)")
 	cmd.Flags().StringVar(&status, "status", "", "active or inactive")
 	fixed(cmd, "status", "active", "inactive")
 	return cmd

@@ -25,7 +25,6 @@
 - `Analytics Dashboard` - Terminal charts: traffic over time with a previous-period overlay, browser/OS/country/city/referrer panels, drill-down filtering, range expressions, and full mouse support 📊
 - `QR Codes` - Render any link as a scannable QR code right in the terminal 📱
 - `Export` - Download click data as JSON, CSV, XLSX, or XML 📤
-- `API Keys` - Create, list, and revoke keys for scripting 🔑
 - `Device-Flow Auth` - No keys to paste — sign in through the spoo.me device flow, sessions refresh for 30 days 🪪
 - `Pipe-Aware` - `--json` on every command, plain output when piped, `NO_COLOR` honored, self-host friendly 🧰
 
@@ -59,7 +58,7 @@ Grab a binary for macOS, Linux, or Windows — or a `.deb`, `.rpm`, or `.apk` pa
 
 # ⌨️ Shell Completion
 
-Tab-completion covers commands, flags, **and live data** — your link aliases (`spoo open <Tab>`), link and key IDs (`spoo links delete <Tab>`, `spoo keys revoke <Tab>`), and flag values like `--scopes`, `--domain`, and `--format`.
+Tab-completion covers commands, flags, **and live data** — your link aliases (`spoo open <Tab>`), link IDs (`spoo links delete <Tab>`), and flag values like `--domain` and `--format`.
 
 Installed via **Homebrew**? It's wired up automatically — just open a new shell.
 
@@ -95,7 +94,6 @@ spoo stats launch                                 # charts in your terminal
 | `spoo links update/delete <id>` | Scriptable link management (`delete` requires `--yes`). |
 | `spoo stats [code]` | Interactive analytics dashboard: time chart with previous-period overlay (`p`), browser/OS/country/city/referrer panels, drill-down filtering (enter or click any row), link switcher (`g`), range expressions (`T` — `7d`, `4h`, `now - 2w to now - 1w`, `2026-01-01 to 2026-02-15`), clicks↔unique toggle (`u`), full mouse support. Piped or `--plain` prints a static report; public stats work logged out. |
 | `spoo export [code]` | Download analytics as JSON, CSV (zip), XLSX, or XML. |
-| `spoo keys` | API keys: `create` (token shown once), list, `revoke`. |
 | `spoo open <code>` | Open a short link in your browser. |
 | `spoo inspect <code>` | See where a link points **without** counting a click. |
 | `spoo qr <code>` | Render a link as a scannable QR code in the terminal (also `Q` in `spoo links`). |

@@ -54,7 +54,7 @@ https://spoo.me/dashboard/keys and pipe it in:
 
 func loginWithBrowser(cmd *cobra.Command, d *deps) error {
 	flow := &auth.DeviceFlow{
-		APIBase:     d.cfg.APIBase,
+		Client:      d.client,
 		OpenBrowser: browser.OpenURL,
 		Out:         cmd.ErrOrStderr(),
 	}
@@ -65,7 +65,7 @@ func loginWithBrowser(cmd *cobra.Command, d *deps) error {
 	if err != nil {
 		return err
 	}
-	tokens, err := d.client.ExchangeDeviceCode(ctx, code, verifier)
+	tokens, err := d.client.ExchangeDeviceCode(ctx, auth.AppID, code, verifier)
 	if err != nil {
 		return fmt.Errorf("token exchange failed: %w", err)
 	}

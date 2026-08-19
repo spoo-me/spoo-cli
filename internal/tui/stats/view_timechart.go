@@ -6,7 +6,8 @@ import (
 
 	tslc "github.com/NimbleMarkets/ntcharts/v2/linechart/timeserieslinechart"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
@@ -15,7 +16,7 @@ import (
 // the time buckets (clicks + unique, plus an optional previous-period
 // ghost). It reads only the series it is handed, not the model.
 type timeChartView struct {
-	clicks, uniques, prev []api.MetricPoint
+	clicks, uniques, prev []spoo.MetricPoint
 	span                  time.Duration
 	label                 string
 	showPrev              bool
@@ -23,7 +24,7 @@ type timeChartView struct {
 
 // timeChartView builds the chart component from the current model state.
 func (m Model) timeChartView() timeChartView {
-	var prev []api.MetricPoint
+	var prev []spoo.MetricPoint
 	if m.prev != nil {
 		prev = m.prev.Points("time", m.metric)
 	}
@@ -57,7 +58,7 @@ func (c timeChartView) render(width, height int) string {
 		return ui.Dim.Render("no time series data")
 	}
 
-	toSeries := func(pts []api.MetricPoint) ([]tslc.TimePoint, float64) {
+	toSeries := func(pts []spoo.MetricPoint) ([]tslc.TimePoint, float64) {
 		out := make([]tslc.TimePoint, 0, len(pts))
 		var maxV float64
 		for _, p := range pts {

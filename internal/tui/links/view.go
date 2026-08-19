@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
@@ -120,8 +119,8 @@ func (m Model) detailView(width int) string {
 		field("destination", it.LongURL),
 		"",
 		label("clicks") + strconv.Itoa(it.TotalClicks),
-		label("created") + kit.ISODate(it.CreatedAt),
-		label("last click") + kit.OrNever(kit.ISODate(it.LastClick)),
+		label("created") + kit.Day(it.CreatedAt),
+		label("last click") + kit.OrNever(kit.Day(it.LastClick)),
 		"",
 		label("password") + yesNo(it.PasswordSet),
 		label("private stats") + yesNo(it.PrivateStats),
@@ -130,8 +129,8 @@ func (m Model) detailView(width int) string {
 	if it.MaxClicks != nil {
 		lines = append(lines, label("max clicks")+strconv.Itoa(*it.MaxClicks))
 	}
-	if it.ExpireAfter != nil {
-		lines = append(lines, label("expires")+time.Unix(*it.ExpireAfter, 0).UTC().Format("2006-01-02 15:04 MST"))
+	if !it.ExpireAfter.IsZero() {
+		lines = append(lines, label("expires")+it.ExpireAfter.UTC().Format("2006-01-02 15:04 MST"))
 	}
 	if it.Domain != "" {
 		lines = append(lines, label("domain")+it.Domain)

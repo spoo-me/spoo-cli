@@ -12,15 +12,25 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/zalando/go-keyring"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+	"github.com/spoo-me/spoo-go/option"
+
 	"github.com/spoo-me/spoo-cli/internal/auth"
 )
 
-func testStatsResponse() *api.StatsResponse {
-	return &api.StatsResponse{
-		Summary: api.StatsSummary{TotalClicks: 100, UniqueClicks: 40, AvgRedirectionTime: 88},
-		TimeRange: api.StatsTimeRange{
-			StartDate: "2026-03-12T00:00:00Z", EndDate: "2026-06-10T00:00:00Z",
+func mustTS(s string) spoo.Timestamp {
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		panic(err)
+	}
+	return spoo.Timestamp{Time: t}
+}
+
+func testStatsResponse() *spoo.StatsResponse {
+	return &spoo.StatsResponse{
+		Summary: spoo.StatsSummary{TotalClicks: 100, UniqueClicks: 40, AvgRedirectionTime: 88},
+		TimeRange: spoo.StatsTimeRange{
+			StartDate: mustTS("2026-03-12T00:00:00Z"), EndDate: mustTS("2026-06-10T00:00:00Z"),
 		},
 		ComputedMetrics: map[string]float64{"unique_click_rate": 40, "average_clicks_per_visitor": 2.5},
 		Metrics: map[string][]map[string]any{
@@ -39,10 +49,16 @@ func testStatsResponse() *api.StatsResponse {
 	}
 }
 
+// newTestClient builds an SDK client wired to the store, the same way
+// the commands construct theirs.
+func newTestClient(base string, store *auth.Store) *spoo.Client {
+	return spoo.NewClient(option.WithBaseURL(base), option.WithTokenSource(store))
+}
+
 func newStatsModel(t *testing.T, srvURL string) Model {
 	t.Helper()
 	keyring.MockInit()
-	client := api.New(srvURL, auth.NewStore(t.TempDir()))
+	client := newTestClient(srvURL, auth.NewStore(t.TempDir()))
 	m := New(client, Target{}, true, "")
 	next, _ := m.Update(statsLoadedMsg{res: testStatsResponse()})
 	return next.(Model)
@@ -449,7 +465,7 @@ func TestPublicViewIsReadOnly(t *testing.T) {
 	defer srv.Close()
 
 	keyring.MockInit()
-	client := api.New(srv.URL, auth.NewStore(t.TempDir()))
+	client := newTestClient(srv.URL, auth.NewStore(t.TempDir()))
 	m := New(client, Target{Kind: KindPublicLink, Alias: "launch"}, false, "")
 	for _, msg := range drainCmd(m.Init()) {
 		next, _ := m.Update(msg)
@@ -504,8 +520,8 @@ func drainCmd(cmd tea.Cmd) []tea.Msg {
 // p ghosts the previous window's series on the time chart.
 func TestPrevPeriodGhost(t *testing.T) {
 	m := newStatsModel(t, "http://unused.invalid")
-	m.prev = &api.StatsResponse{
-		Summary: api.StatsSummary{TotalClicks: 30},
+	m.prev = &spoo.StatsResponse{
+		Summary: spoo.StatsSummary{TotalClicks: 30},
 		Metrics: map[string][]map[string]any{
 			"clicks_by_time": {{"time": "2026-03-05", "clicks": 30.0}},
 		},
@@ -584,11 +600,13 @@ func TestExportModal(t *testing.T) {
 	}
 }
 
-// an owned-link view exports through the per-link endpoint.
+// an owned-link view exports through the unified endpoint, sliced to
+// the link with the url_id filter.
 func TestExportRoutesOwnedLinkToPerLinkEndpoint(t *testing.T) {
-	var gotPath string
+	var gotPath, gotURLID string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
+		gotURLID = r.URL.Query().Get("url_id")
 		w.Write([]byte(`{}`))
 	}))
 	defer srv.Close()
@@ -599,8 +617,8 @@ func TestExportRoutesOwnedLinkToPerLinkEndpoint(t *testing.T) {
 	if done, ok := cmd().(exportDoneMsg); !ok || done.err != nil {
 		t.Fatalf("export failed: %+v", done)
 	}
-	if gotPath != "/api/v1/export/links/id-launch" {
-		t.Fatalf("path = %q, want the per-link export endpoint", gotPath)
+	if gotPath != "/api/v1/export" || gotURLID != "id-launch" {
+		t.Fatalf("path = %q url_id = %q, want the unified endpoint sliced by url_id", gotPath, gotURLID)
 	}
 }
 

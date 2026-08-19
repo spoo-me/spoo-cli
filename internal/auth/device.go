@@ -2,16 +2,13 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/url"
+
+	spoo "github.com/spoo-me/spoo-go"
 )
 
 const (
@@ -28,9 +25,12 @@ const successHTML = `<!doctype html><html><body style="font-family:system-ui;dis
 </body></html>`
 
 // DeviceFlow drives the spoo.me connected-apps device authorization:
-// loopback server → browser consent → one-time code.
+// loopback server → browser consent → one-time code. The protocol
+// pieces (PKCE, state, the auth URL) come from the SDK; the browser
+// leg and the loopback listener stay here — they are platform
+// concerns the SDK deliberately leaves to the app.
 type DeviceFlow struct {
-	APIBase     string
+	Client      *spoo.Client
 	OpenBrowser func(url string) error
 	Out         io.Writer // progress messages (stderr)
 }
@@ -39,11 +39,11 @@ type DeviceFlow struct {
 // expires, or the callback is invalid. Returns the one-time code and the
 // PKCE verifier that must accompany it in the token exchange.
 func (f *DeviceFlow) Run(ctx context.Context) (string, string, error) {
-	state, err := randomState()
+	state, err := spoo.GenerateState()
 	if err != nil {
 		return "", "", err
 	}
-	verifier, err := codeVerifier()
+	verifier, err := spoo.GenerateCodeVerifier()
 	if err != nil {
 		return "", "", err
 	}
@@ -79,10 +79,12 @@ func (f *DeviceFlow) Run(ctx context.Context) (string, string, error) {
 	go srv.Serve(ln)
 	defer srv.Shutdown(context.Background())
 
-	authURL := fmt.Sprintf("%s/auth/device/login?app_id=%s&redirect_uri=%s&state=%s&code_challenge=%s&code_challenge_method=S256",
-		f.APIBase, AppID,
-		url.QueryEscape("http://"+CallbackAddr+CallbackPath), state,
-		codeChallengeS256(verifier))
+	authURL := f.Client.DeviceAuthURL(spoo.DeviceAuthParams{
+		AppID:         AppID,
+		RedirectURI:   "http://" + CallbackAddr + CallbackPath,
+		State:         state,
+		CodeChallenge: spoo.CodeChallengeS256(verifier),
+	})
 
 	fmt.Fprintln(f.Out, "Opening your browser to authorize spoo CLI…")
 	fmt.Fprintf(f.Out, "If it doesn't open automatically, visit:\n\n  %s\n\n", authURL)
@@ -98,29 +100,4 @@ func (f *DeviceFlow) Run(ctx context.Context) (string, string, error) {
 	case <-ctx.Done():
 		return "", "", fmt.Errorf("login timed out: %w", ctx.Err())
 	}
-}
-
-func randomState() (string, error) {
-	b := make([]byte, 16)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
-}
-
-// codeVerifier returns a PKCE code verifier: 32 random bytes encoded as
-// unpadded base64url, always 43 characters (RFC 7636 §4.1).
-func codeVerifier() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-
-// codeChallengeS256 derives the S256 challenge for a verifier:
-// BASE64URL(SHA256(verifier)) without padding (RFC 7636 §4.2).
-func codeChallengeS256(verifier string) string {
-	sum := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(sum[:])
 }

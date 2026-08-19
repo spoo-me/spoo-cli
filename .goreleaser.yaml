@@ -17,7 +17,7 @@ builds:
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ldflags:
-      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X github.com/spoo-me/spoo-cli/internal/api.Version={{.Version}}
+      - -s -w -X main.version={{.Version}} -X main.commit={{.ShortCommit}} -X github.com/spoo-me/spoo-cli/internal/cmd.Version={{.Version}}
 
 archives:
   - formats: [tar.gz]

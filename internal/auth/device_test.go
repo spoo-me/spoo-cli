@@ -10,17 +10,24 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	spoo "github.com/spoo-me/spoo-go"
+	"github.com/spoo-me/spoo-go/option"
 )
 
 var challengeRe = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+
+func testFlowClient() *spoo.Client {
+	return spoo.NewClient(option.WithBaseURL("https://spoo.example"))
+}
 
 // Simulates the browser leg: the flow opens a URL; we parse state and
 // redirect_uri out of it and hit the loopback callback like spoo.me would.
 func TestDeviceFlowReturnsCode(t *testing.T) {
 	challengeCh := make(chan string, 1)
 	flow := &DeviceFlow{
-		APIBase: "https://spoo.example",
-		Out:     io.Discard,
+		Client: testFlowClient(),
+		Out:    io.Discard,
 		OpenBrowser: func(authURL string) error {
 			go func() {
 				u, err := url.Parse(authURL)
@@ -68,26 +75,15 @@ func TestDeviceFlowReturnsCode(t *testing.T) {
 	if len(verifier) != 43 {
 		t.Fatalf("verifier length = %d, want 43", len(verifier))
 	}
-	if got := codeChallengeS256(verifier); got != <-challengeCh {
+	if got := spoo.CodeChallengeS256(verifier); got != <-challengeCh {
 		t.Fatalf("code_challenge on auth URL does not match S256(verifier): %q", got)
-	}
-}
-
-// RFC 7636 Appendix B test vector.
-func TestCodeChallengeS256Vector(t *testing.T) {
-	const (
-		verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
-		want     = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
-	)
-	if got := codeChallengeS256(verifier); got != want {
-		t.Fatalf("codeChallengeS256 = %q, want %q", got, want)
 	}
 }
 
 func TestDeviceFlowRejectsStateMismatch(t *testing.T) {
 	flow := &DeviceFlow{
-		APIBase: "https://spoo.example",
-		Out:     io.Discard,
+		Client: testFlowClient(),
+		Out:    io.Discard,
 		OpenBrowser: func(authURL string) error {
 			go func() {
 				time.Sleep(50 * time.Millisecond)

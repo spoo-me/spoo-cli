@@ -13,7 +13,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	lipgloss "charm.land/lipgloss/v2"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
@@ -45,7 +46,7 @@ var editMeta = [statusField]editFieldMeta{
 // bordered dialog. tab/↑↓ move (with wrap), enter saves, esc cancels.
 type editForm struct {
 	open   bool
-	item   api.URLItem
+	item   spoo.URLItem
 	inputs [statusField]textinput.Model
 	status string // "active" | "inactive"
 	focus  int
@@ -55,7 +56,7 @@ type editForm struct {
 func newEditForm() editForm { return editForm{} }
 
 // show builds the form pre-filled from it and focuses the first field.
-func (e editForm) show(it api.URLItem) (editForm, tea.Cmd) {
+func (e editForm) show(it spoo.URLItem) (editForm, tea.Cmd) {
 	e = editForm{open: true, item: it, status: strings.ToLower(it.Status)}
 	if e.status != "active" && e.status != "inactive" {
 		e.status = "active" // blocked/expired aren't user-settable
@@ -209,18 +210,26 @@ func (e editForm) statusToggle() string {
 		pick("inactive", e.status == "inactive", off)
 }
 
-// changes returns the PATCH body for fields that differ from the
-// original link. Status is upper-cased to the API's enum.
-func (e editForm) changes() (map[string]any, error) {
-	f := map[string]any{}
+// changes diffs the form against the original link. It returns the
+// typed PATCH params for the SDK and a display map (field → shown
+// value) that drives the confirmation summary; an empty map means
+// nothing changed. The PATCH is tri-state: fields left out of params
+// keep their current setting, spoo.Null clears one (max clicks 0), and
+// spoo.Set replaces it. Status is upper-cased to the API's enum.
+func (e editForm) changes() (spoo.UpdateURLParams, map[string]any, error) {
+	var params spoo.UpdateURLParams
+	shown := map[string]any{}
 	if v := e.inputs[fDest].Value(); v != e.item.LongURL {
-		f["long_url"] = v
+		params.LongURL = v
+		shown["long_url"] = v
 	}
 	if v := e.inputs[fAlias].Value(); v != e.item.Alias {
-		f["alias"] = v
+		params.Alias = v
+		shown["alias"] = v
 	}
 	if v := e.inputs[fPassword].Value(); v != "" {
-		f["password"] = v
+		params.Password = spoo.Set(v)
+		shown["password"] = v
 	}
 	if mc := e.inputs[fMaxClicks].Value(); mc != "" {
 		n, _ := strconv.Atoi(mc)
@@ -229,20 +238,26 @@ func (e editForm) changes() (map[string]any, error) {
 			cur = *e.item.MaxClicks
 		}
 		if n != cur {
-			f["max_clicks"] = n
+			params.MaxClicks = spoo.Set(n)
+			if n == 0 {
+				params.MaxClicks = spoo.Null[int]() // 0 removes the limit
+			}
+			shown["max_clicks"] = n
 		}
 	}
 	if exp := e.inputs[fExpires].Value(); exp != "" {
-		v, err := api.ParseExpiry(exp, time.Now())
+		v, err := spoo.ParseExpiry(exp, time.Now())
 		if err != nil {
-			return nil, err
+			return spoo.UpdateURLParams{}, nil, err
 		}
-		f["expire_after"] = v
+		params.ExpireAfter = spoo.Set(v)
+		shown["expire_after"] = exp
 	}
 	if e.status != strings.ToLower(e.item.Status) {
-		f["status"] = strings.ToUpper(e.status) // API wants ACTIVE / INACTIVE
+		params.Status = strings.ToUpper(e.status) // API wants ACTIVE / INACTIVE
+		shown["status"] = params.Status
 	}
-	return f, nil
+	return params, shown, nil
 }
 
 // summary lists the pending changes for the confirmation dialog.

@@ -7,7 +7,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/spoo-me/spoo-cli/internal/api"
+	spoo "github.com/spoo-me/spoo-go"
+
 	"github.com/spoo-me/spoo-cli/internal/tui/kit"
 	"github.com/spoo-me/spoo-cli/internal/ui"
 )
@@ -104,18 +105,18 @@ func (m Model) updateEdit(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if done {
-		changes, err := m.edit.changes()
+		params, changed, err := m.edit.changes()
 		if err != nil {
 			m.status = ui.Err.Render("✗ " + err.Error())
 			return m, cmd
 		}
-		if len(changes) == 0 {
+		if len(changed) == 0 {
 			m.status = ui.Dim.Render("no changes")
 			return m, cmd
 		}
-		m.pendingPATCH = changes
+		m.pendingPATCH = params
 		it := m.edit.item
-		m.confirm = m.confirm.askSimple("save", it.ID, "Save changes to "+it.Alias+"?", m.edit.summary(changes))
+		m.confirm = m.confirm.askSimple("save", it.ID, "Save changes to "+it.Alias+"?", m.edit.summary(changed))
 	}
 	return m, cmd
 }
@@ -132,7 +133,7 @@ func (m Model) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch m.confirm.tag {
 	case "save":
 		patch := m.pendingPATCH
-		m.pendingPATCH = nil
+		m.pendingPATCH = spoo.UpdateURLParams{}
 		m.status = ui.Dim.Render("saving…")
 		return m, m.applyPATCH(m.confirm.tagID, patch)
 	case "delete":
@@ -143,10 +144,10 @@ func (m Model) updateConfirm(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // applyPATCH sends the staged edit and reports the outcome.
-func (m Model) applyPATCH(id string, fields map[string]any) tea.Cmd {
+func (m Model) applyPATCH(id string, params spoo.UpdateURLParams) tea.Cmd {
 	client := m.client
 	return func() tea.Msg {
-		_, err := client.UpdateURL(context.Background(), id, fields)
+		_, err := client.UpdateURL(context.Background(), id, params)
 		return actionMsg{note: "link updated", err: err}
 	}
 }
@@ -318,35 +319,34 @@ func (m *Model) scheduleStats() tea.Cmd {
 	})
 }
 
-func (m Model) fetchStats(it *api.URLItem) tea.Cmd {
+func (m Model) fetchStats(it *spoo.URLItem) tea.Cmd {
 	client := m.client
 	id, alias := it.ID, it.Alias
 	return func() tea.Msg {
 		// the endpoint defaults to a 7-day window; ask for the maximum
-		from := time.Now().UTC().AddDate(0, 0, -api.MaxRangeDays).Format(time.RFC3339)
-		res, err := client.LinkStats(context.Background(), id, api.StatsQuery{
-			StartDate: from,
+		res, err := client.LinkStats(context.Background(), id, spoo.StatsQuery{
+			StartDate: time.Now().UTC().AddDate(0, 0, -spoo.MaxRangeDays),
 			GroupBy:   []string{"time", "browser", "os", "country", "referrer"},
 		})
 		return statsMsg{alias: alias, res: res, err: err}
 	}
 }
 
-func (m Model) openStatus(it *api.URLItem) string {
+func (m Model) openStatus(it *spoo.URLItem) string {
 	if err := m.openBrowser(m.shortURL(it)); err != nil {
 		return ui.Err.Render("✗ " + err.Error())
 	}
 	return ui.Dim.Render("opened " + m.shortURL(it))
 }
 
-func (m Model) copyStatus(it *api.URLItem) string {
+func (m Model) copyStatus(it *spoo.URLItem) string {
 	if err := m.copyText(m.shortURL(it)); err != nil {
 		return ui.Err.Render("✗ " + err.Error())
 	}
 	return ui.OK.Render("✓ copied " + m.shortURL(it))
 }
 
-func (m Model) toggleStatus(it *api.URLItem) tea.Cmd {
+func (m Model) toggleStatus(it *spoo.URLItem) tea.Cmd {
 	client := m.client
 	id, alias, status := it.ID, it.Alias, it.Status
 	return func() tea.Msg {
@@ -354,7 +354,8 @@ func (m Model) toggleStatus(it *api.URLItem) tea.Cmd {
 		if status != "ACTIVE" {
 			next = "ACTIVE"
 		}
-		_, err := client.UpdateURL(context.Background(), id, map[string]any{"status": next})
+		// the dedicated status endpoint: a toggle is not a general PATCH
+		_, err := client.SetURLStatus(context.Background(), id, next)
 		return actionMsg{note: alias + " → " + next, err: err}
 	}
 }
